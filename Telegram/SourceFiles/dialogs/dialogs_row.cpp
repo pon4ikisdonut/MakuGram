@@ -800,7 +800,8 @@ void Row::paintUserpic(
 	const auto limit = Ui::kOutlineSegmentsMax;
 	const auto storiesCount = std::min(storiesCountReal, limit);
 	const auto storiesUnreadCount = std::min(storiesUnreadCountReal, limit);
-	if (_cornerBadgeUserpic->frame.size() != frameSize) {
+	const auto frameSizeChanged = (_cornerBadgeUserpic->frame.size() != frameSize);
+	if (frameSizeChanged) {
 		_cornerBadgeUserpic->frame = QImage(
 			frameSize,
 			QImage::Format_ARGB32_Premultiplied);
@@ -814,7 +815,7 @@ void Row::paintUserpic(
 	const auto active = context.active ? 1 : 0;
 	const auto keyChanged = (_cornerBadgeUserpic->key != key)
 		|| (_cornerBadgeUserpic->paletteVersion != paletteVersion);
-	if (keyChanged) {
+	if (keyChanged || frameSizeChanged) {
 		_cornerBadgeUserpic->cacheTTL = QImage();
 		_cornerBadgeUserpic->cacheHidden = QImage();
 	}
@@ -832,7 +833,8 @@ void Row::paintUserpic(
 	// Only stories outline and online badge differ for active row.
 	const auto activeMatters = storiesCount
 		|| !(subscribed || communityMember);
-	if (keyChanged
+	if (frameSizeChanged
+		|| keyChanged
 		|| !_cornerBadgeUserpic->layersManager.isFinished()
 		|| (activeMatters && _cornerBadgeUserpic->active != active)
 		|| _cornerBadgeUserpic->hidden != (hidden ? 1 : 0)
