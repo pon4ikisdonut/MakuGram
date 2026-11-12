@@ -1,0 +1,482 @@
+name: Build MakuGram
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: makugram-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    if: github.repository == 'pon4ikisdonut/MakuGram'
+    name: Windows (${{ matrix.arch }})
+    runs-on: ${{ matrix.arch == 'arm64' && 'windows-11-arm' || 'windows-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+
+    env:
+      PREPARE_PATH: Telegram/build/prepare/prepare.py
+
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Prepare directories
+        run: |
+          mkdir %userprofile%\TBuild\Libraries
+          mklink /d %GITHUB_WORKSPACE%\TBuild %userprofile%\TBuild
+          echo TBUILD=%GITHUB_WORKSPACE%\TBuild>>%GITHUB_ENV%
+          echo LibrariesPath=%GITHUB_WORKSPACE%\TBuild\Libraries${{ matrix.arch == 'x64' && '\win64' || '' }}>>%GITHUB_ENV%
+
+      - name: Get repository name
+        shell: bash
+        run: echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> $GITHUB_ENV
+
+      - name: Clone
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          path: ${{ env.TBUILD }}\${{ env.REPO_NAME }}
+
+      - name: First set up
+        shell: bash
+        run: |
+          DOCPATH=$TBUILD/$REPO_NAME/docs/building-win.md
+          SDK="$(grep "SDK version" $DOCPATH | sed -r 's/.*\*\*(.*)\*\* SDK version.*/\1/')"
+          echo "SDK=$SDK" >> $GITHUB_ENV
+          echo "$(sha256sum $TBUILD/$REPO_NAME/$PREPARE_PATH | awk '{ print $1 }')" >> CACHE_KEY.txt
+          echo "$SDK" >> CACHE_KEY.txt
+          echo "CACHE_KEY=$(sha256sum CACHE_KEY.txt | awk '{ print $1 }')" >> $GITHUB_ENV
+          git config --global user.email "ci@example.com"
+          git config --global user.name "CI"
+
+      - name: Install VS Build Tools (ARM64)
+        if: matrix.arch == 'arm64'
+        shell: pwsh
+        run: |
+          $exe = Join-Path $env:RUNNER_TEMP 'vs_buildtools.exe'
+          Invoke-WebRequest -Uri https://aka.ms/vs/18/stable/vs_buildtools.exe -OutFile $exe
+          $p = Start-Process -FilePath $exe -Wait -PassThru -ArgumentList `
+            '--quiet','--wait','--norestart','--nocache', `
+            '--add','Microsoft.VisualStudio.Workload.VCTools', `
+            '--add','Microsoft.VisualStudio.Component.VC.Tools.ARM64', `
+            '--add','Microsoft.VisualStudio.Component.VC.ATL.ARM64'
+          Remove-Item $exe -Force -ErrorAction SilentlyContinue
+          if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
+
+      - uses: Eden-CI/msvc-dev-cmd@master
+        name: Native Tools Command Prompt
+        with:
+          arch: ${{ matrix.arch }}
+          sdk: ${{ env.SDK }}
+          toolset: ${{ matrix.arch == 'arm64' && '' || '14.44' }}
+
+      - name: NuGet sources
+        run: |
+          nuget sources Disable -Name "Microsoft Visual Studio Offline Packages"
+          nuget sources Add -Source https://api.nuget.org/v3/index.json & exit 0
+
+      - name: Restore ThirdParty cache
+        id: cache-third-party
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.TBUILD }}\ThirdParty
+          key: ${{ runner.OS }}-${{ runner.arch }}-third-party-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-${{ runner.arch }}-third-party-
+
+      - name: Restore Libraries cache
+        id: cache-libs
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ${{ env.LibrariesPath }}\*
+            !${{ env.LibrariesPath }}\cache_keys
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\*
+            !${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: ${{ runner.OS }}-${{ matrix.arch }}-libs-rel-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-${{ matrix.arch }}-libs-rel-
+
+      - name: Restore Qt cache
+        id: cache-qt
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: ${{ runner.OS }}-${{ matrix.arch }}-qtrel-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-${{ matrix.arch }}-qtrel-
+
+      - name: Prepare libraries
+        run: |
+          %TBUILD%\%REPO_NAME%\Telegram\build\prepare\win.bat silent
+
+      - name: Prune intermediate files
+        shell: bash
+        run: find $LibrariesPath '(' '(' ! '(' -name '*.lib' -o -name '*.a' -o -name '*.exe' -o -name '*.h' -o -name '*.hpp' -o -name '*.inc' -o -name '*.cmake' -o -name '*.pc' -o -path '*/include/*' -o -path '*/objects-*' -o -path '*/cache_keys/*' -o -path '*/patches/*' -o -path '*/nv-codec-headers/*' -o -path '*/src/wallet_engine/*' -o '(' '(' -path '*/tlottie/*' -o -path '*/wallet-engine/*' ')' ! -path '*/target/*' ')' ')' -type f ')' -o '(' -empty ! -path '*/tlottie/*' ! -path '*/wallet-engine/*' ')' ')' -delete
+
+      - name: Save ThirdParty cache
+        if: steps.cache-third-party.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.TBUILD }}\ThirdParty
+          key: ${{ steps.cache-third-party.outputs.cache-primary-key }}
+
+      - name: Save Libraries cache
+        if: steps.cache-libs.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ${{ env.LibrariesPath }}\*
+            !${{ env.LibrariesPath }}\cache_keys
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\*
+            !${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: ${{ steps.cache-libs.outputs.cache-primary-key }}
+
+      - name: Save Qt cache
+        if: steps.cache-qt.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: ${{ steps.cache-qt.outputs.cache-primary-key }}
+
+      - name: Build
+        run: |
+          cd %TBUILD%\%REPO_NAME%\Telegram
+          call configure.bat ^
+            ${{ matrix.arch == 'arm64' && 'arm' || 'x64' }} ^
+            -D TDESKTOP_API_ID=${{ vars.TDESKTOP_API_ID || '611335' }} ^
+            -D TDESKTOP_API_HASH=${{ secrets.TDESKTOP_API_HASH || 'd524b414d21f4d37f08684c1df41ac9c' }} ^
+            -D CMAKE_CONFIGURATION_TYPES=Release ^
+            -D DESKTOP_APP_ENABLE_LTO=ON ^
+            -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
+            -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+          cmake --build ..\out --config Release --parallel
+
+      - name: Package artifact
+        shell: pwsh
+        run: |
+          $out = "$env:TBUILD\$env:REPO_NAME\out\Release"
+          $stage = Join-Path $env:RUNNER_TEMP "makugram-win-${{ matrix.arch }}"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item (Join-Path $out "Telegram.exe") $stage
+          $modules = Join-Path $out "modules"
+          if (Test-Path $modules) {
+            Copy-Item $modules (Join-Path $stage "modules") -Recurse
+          }
+          New-Item -ItemType Directory -Force -Path "artifact" | Out-Null
+          Compress-Archive -Path "$stage\*" -DestinationPath "artifact\MakuGram-win-${{ matrix.arch }}.zip" -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: MakuGram-win-${{ matrix.arch }}
+          path: artifact/MakuGram-win-${{ matrix.arch }}.zip
+          retention-days: 30
+
+  linux:
+    if: github.repository == 'pon4ikisdonut/MakuGram'
+    name: Linux (x64)
+    runs-on: ubuntu-latest
+
+    env:
+      IMAGE_TAG: makugram:centos_env
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Prepare Dockerfile
+        run: |
+          sudo apt update
+          sudo apt install -y python3-jinja2
+          cd Telegram/build/docker/centos_env
+          DOCKERFILE=$(DEBUG= python3 gen_dockerfile.py)
+          echo "$DOCKERFILE" > Dockerfile
+          rm -rf __pycache__
+
+      - name: Free up disk space
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6
+        with:
+          tool-cache: true
+
+      - name: Set up Docker Buildx
+        id: setup-buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Restore Docker cache
+        id: cache-libs
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ${{ runner.temp }}/.buildx-cache
+            ${{ runner.temp }}/.mount-cache
+          key: ${{ runner.OS }}-libs-rel-${{ hashFiles('Telegram/build/docker/centos_env/**') }}
+          restore-keys: ${{ runner.OS }}-libs-rel-
+
+      - name: Restore Docker cache mounts
+        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723
+        with:
+          builder: ${{ steps.setup-buildx.outputs.name }}
+          cache-dir: ${{ runner.temp }}/.mount-cache
+          dockerfile: Telegram/build/docker/centos_env/Dockerfile
+          skip-extraction: ${{ steps.cache-libs.outputs.cache-hit }}
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v7
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: Telegram/build/docker/centos_env
+          load: true
+          tags: ${{ env.IMAGE_TAG }}
+          cache-from: type=local,src=${{ runner.temp }}/.buildx-cache
+          cache-to: type=local,dest=${{ runner.temp }}/.buildx-cache-new,mode=max
+
+      - name: Move cache
+        run: |
+          rm -rf ${{ runner.temp }}/.buildx-cache
+          mv ${{ runner.temp }}/.buildx-cache{-new,}
+
+      - name: Save Docker cache
+        if: steps.cache-libs.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ${{ runner.temp }}/.buildx-cache
+            ${{ runner.temp }}/.mount-cache
+          key: ${{ steps.cache-libs.outputs.cache-primary-key }}
+
+      - name: Build
+        run: |
+          docker run --rm \
+            -u $(id -u) \
+            -v $PWD:/usr/src/tdesktop \
+            -e CONFIG=Release \
+            $IMAGE_TAG \
+            /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
+            -D CMAKE_CONFIGURATION_TYPES=Release \
+            -D DESKTOP_APP_ENABLE_LTO=ON \
+            -D TDESKTOP_API_ID=${{ vars.TDESKTOP_API_ID || '611335' }} \
+            -D TDESKTOP_API_HASH=${{ secrets.TDESKTOP_API_HASH || 'd524b414d21f4d37f08684c1df41ac9c' }} \
+            -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \
+            -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+
+      - name: Package artifact
+        run: |
+          test -f out/Release/Telegram
+          strip -s out/Release/Telegram || true
+          mkdir -p artifact
+          tar -cJf artifact/MakuGram-linux-x64.tar.xz -C out/Release Telegram
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: MakuGram-linux-x64
+          path: artifact/MakuGram-linux-x64.tar.xz
+          retention-days: 30
+
+  macos:
+    if: github.repository == 'pon4ikisdonut/MakuGram'
+    name: macOS (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            arch: arm64
+          - os: macos-15-intel
+            arch: x64
+
+    env:
+      GIT: https://github.com
+      CMAKE_GENERATOR: Ninja
+      CMAKE_BUILD_TYPE: Release
+      TDE2E: 51743dfd01dff6179e2d8f7095729caa4e2222e9
+      TLOTTIE: 92df98dc209bc39b1e567ec74a8c86a0af5239de
+      WALLET_ENGINE: e59e0d89d7ee90c388bf36e3334c5b276f396697
+      RUST_PATCHES: aec474953ff7ee9b6e4cd9b658288ea86d124f3
+      RUST_TOOLCHAIN: 1.96.1
+
+    steps:
+      - name: Get repository name
+        run: echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> $GITHUB_ENV
+
+      - name: Clone
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          path: ${{ env.REPO_NAME }}
+
+      - name: Install Homebrew dependencies
+        run: |
+          libs="ada-url ffmpeg@6 jpeg-xl libavif libheif minizip openal-soft openh264 openssl opus qtbase qtimageformats qtshadertools qtsvg xz"
+          brew update
+          brew install autoconf automake boost cmake libtool ninja pkg-config python $libs
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          BREW_PREFIX="$(brew --prefix)"
+          echo "CMAKE_PREFIX_PATH=$BREW_PREFIX/opt/ffmpeg@6:$BREW_PREFIX/opt/openal-soft" >> $GITHUB_ENV
+          echo "MACOSX_DEPLOYMENT_TARGET=$(grep 'set(QT_SUPPORTED_MIN_MACOS_VERSION' $BREW_PREFIX/Cellar/qtbase/*/lib/cmake/Qt6/Qt6ConfigExtras.cmake | sed -E 's/^.*"(.*)"\)$/\1/')" >> $GITHUB_ENV
+          echo "LibrariesPath=$(pwd)" >> $GITHUB_ENV
+          xcodebuild -version > CACHE_KEY.txt
+          brew list --versions $libs >> CACHE_KEY.txt
+          echo "$GITHUB_WORKSPACE" >> CACHE_KEY.txt
+          echo "CACHE_KEY=$(md5 -q CACHE_KEY.txt)" >> $GITHUB_ENV
+          echo "RNNOISE=$(curl -sSL --header 'Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' https://api.github.com/repos/xiph/rnnoise/git/refs/heads/master | jq -r .object.sha)" >> $GITHUB_ENV
+          echo "WEBRTC=$(curl -sSL --header 'Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' https://api.github.com/repos/desktop-app/tg_owt/git/refs/heads/master | jq -r .object.sha)" >> $GITHUB_ENV
+
+      - name: Rust libraries cache
+        id: cache-tdesktop-rust
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.LibrariesPath }}/local/tdesktop_rust
+          key: ${{ runner.OS }}-${{ matrix.arch }}-tdesktop-rust-${{ env.TLOTTIE }}-${{ env.WALLET_ENGINE }}-${{ env.RUST_PATCHES }}-${{ env.RUST_TOOLCHAIN }}-${{ env.CACHE_KEY }}
+
+      - name: Build Rust libraries
+        if: steps.cache-tdesktop-rust.outputs.cache-hit != 'true'
+        run: |
+          cd "$LibrariesPath"
+          export RUSTUP_HOME="$LibrariesPath/rustup"
+          export CARGO_HOME="$LibrariesPath/cargo"
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o rustup-init.sh
+          sh rustup-init.sh -y --no-modify-path --profile minimal --default-toolchain "$RUST_TOOLCHAIN"
+          export RUSTUP_TOOLCHAIN="$RUST_TOOLCHAIN"
+          export PATH="$CARGO_HOME/bin:$PATH"
+
+          git init rust-patches
+          cd rust-patches
+          git remote add origin "$GIT/desktop-app/patches.git"
+          git fetch --depth=1 origin "$RUST_PATCHES"
+          git reset --hard FETCH_HEAD
+          cd "$LibrariesPath"
+
+          git init tlottie
+          cd tlottie
+          git remote add origin "$GIT/dkaraush/tlottie.git"
+          git fetch --depth=1 origin "$TLOTTIE"
+          git reset --hard FETCH_HEAD
+          cd "$LibrariesPath"
+
+          export GIT_LFS_SKIP_SMUDGE=1
+          git init wallet-engine
+          cd wallet-engine
+          git remote add origin "$GIT/i582/wallet-engine.git"
+          git fetch --depth=1 origin "$WALLET_ENGINE"
+          git reset --hard FETCH_HEAD
+          git apply ../rust-patches/wallet-engine.patch
+          cd "$LibrariesPath"
+
+          cargo new --lib --vcs none tdesktop_rust
+          cd tdesktop_rust
+          printf 'pub use ::tlottie;\npub use ::wallet_engine;\n' > src/lib.rs
+          cargo add --path ../tlottie --features c-api
+          cargo add --path ../wallet-engine
+          cargo rustc --lib --release \
+            --crate-type staticlib --crate-type cdylib \
+            --config "profile.release.opt-level='z'" \
+            --config "profile.release.lto='thin'" \
+            --config "profile.release.codegen-units=1" \
+            --config "profile.release.panic='unwind'" \
+            --config "profile.release.package.tlottie.opt-level=3" \
+            -- --print native-static-libs
+          install -d "$LibrariesPath/local/tdesktop_rust/lib" "$LibrariesPath/local/tdesktop_rust/include/tlottie" "$LibrariesPath/local/tdesktop_rust/include/wallet_engine"
+          install -m 644 target/release/libtdesktop_rust.a "$LibrariesPath/local/tdesktop_rust/lib/libtdesktop_rust.a"
+          install -m 644 ../tlottie/include/tlottie.h "$LibrariesPath/local/tdesktop_rust/include/tlottie/tlottie.h"
+          cargo run --manifest-path ../wallet-engine/bindgen/cpp/bindgen/Cargo.toml --locked -- \
+            --library --out-dir "$LibrariesPath/local/tdesktop_rust/include/wallet_engine" \
+            target/release/libtdesktop_rust.dylib
+
+      - name: RNNoise cache
+        id: cache-rnnoise
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.LibrariesPath }}/local/rnnoise
+          key: ${{ runner.OS }}-${{ matrix.arch }}-rnnoise-${{ env.RNNOISE }}-${{ env.CACHE_KEY }}
+
+      - name: Build RNNoise
+        if: steps.cache-rnnoise.outputs.cache-hit != 'true'
+        run: |
+          cd "$LibrariesPath"
+          git clone --depth=1 "$GIT/xiph/rnnoise.git"
+          cd rnnoise
+          ./autogen.sh
+          ./configure --prefix="$LibrariesPath/local/rnnoise" --disable-examples --disable-doc
+          make -j"$(sysctl -n hw.logicalcpu)"
+          make install
+
+      - name: WebRTC cache
+        id: cache-webrtc
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.LibrariesPath }}/local/tg_owt
+          key: ${{ runner.OS }}-${{ matrix.arch }}-webrtc-${{ env.WEBRTC }}-${{ env.CACHE_KEY }}
+
+      - name: Build WebRTC
+        if: steps.cache-webrtc.outputs.cache-hit != 'true'
+        run: |
+          cd "$LibrariesPath"
+          git clone --depth=1 --recursive --shallow-submodules "$GIT/desktop-app/tg_owt.git"
+          cd tg_owt
+          cmake -Bbuild . -DCMAKE_INSTALL_PREFIX="$LibrariesPath/local/tg_owt"
+          cmake --build build
+          cmake --install build
+
+      - name: TDE2E cache
+        id: cache-tde2e
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.LibrariesPath }}/local/tde2e
+          key: ${{ runner.OS }}-${{ matrix.arch }}-tde2e-${{ env.TDE2E }}-${{ env.CACHE_KEY }}
+
+      - name: Build TDE2E
+        if: steps.cache-tde2e.outputs.cache-hit != 'true'
+        run: |
+          cd "$LibrariesPath"
+          git init tde2e
+          cd tde2e
+          git remote add origin "$GIT/tdlib/td.git"
+          git fetch --depth=1 origin "$TDE2E"
+          git reset --hard FETCH_HEAD
+          cmake -Bbuild . -DCMAKE_INSTALL_PREFIX="$LibrariesPath/local/tde2e" -DTD_E2E_ONLY=ON
+          cmake --build build
+          cmake --install build
+
+      - name: Build
+        run: |
+          cd "$REPO_NAME"
+          export CMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH$(find "$LibrariesPath/local" -mindepth 1 -maxdepth 1 -type d -exec printf ':%s' {} +)"
+          cmake -Bbuild . \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DTDESKTOP_API_ID=${{ vars.TDESKTOP_API_ID || '611335' }} \
+            -DTDESKTOP_API_HASH=${{ secrets.TDESKTOP_API_HASH || 'd524b414d21f4d37f08684c1df41ac9c' }} \
+            -DDESKTOP_APP_DISABLE_AUTOUPDATE=ON \
+            -DDESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+          cmake --build build
+          macdeployqt build/Telegram.app
+          codesign --remove-signature build/Telegram.app
+
+      - name: Package artifact
+        run: |
+          mkdir -p artifact
+          ditto -c -k --keepParent "$REPO_NAME/build/Telegram.app" "artifact/MakuGram-macos-${{ matrix.arch }}.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: MakuGram-macos-${{ matrix.arch }}
+          path: artifact/MakuGram-macos-${{ matrix.arch }}.zip
+          retention-days: 30
