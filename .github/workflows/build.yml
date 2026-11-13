@@ -9,17 +9,13 @@ permissions:
 
 concurrency:
   group: makugram-build-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   windows:
     if: github.repository == 'pon4ikisdonut/MakuGram'
-    name: Windows (${{ matrix.arch }})
-    runs-on: ${{ matrix.arch == 'arm64' && 'windows-11-arm' || 'windows-latest' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x64, arm64]
+    name: Windows (x64)
+    runs-on: windows-latest
 
     env:
       PREPARE_PATH: Telegram/build/prepare/prepare.py
@@ -34,7 +30,7 @@ jobs:
           mkdir %userprofile%\TBuild\Libraries
           mklink /d %GITHUB_WORKSPACE%\TBuild %userprofile%\TBuild
           echo TBUILD=%GITHUB_WORKSPACE%\TBuild>>%GITHUB_ENV%
-          echo LibrariesPath=%GITHUB_WORKSPACE%\TBuild\Libraries${{ matrix.arch == 'x64' && '\win64' || '' }}>>%GITHUB_ENV%
+          echo LibrariesPath=%GITHUB_WORKSPACE%\TBuild\Libraries\win64>>%GITHUB_ENV%
 
       - name: Get repository name
         shell: bash
@@ -58,26 +54,55 @@ jobs:
           git config --global user.email "ci@example.com"
           git config --global user.name "CI"
 
-      - name: Install VS Build Tools (ARM64)
-        if: matrix.arch == 'arm64'
+      - name: Visual Studio ATL component
         shell: pwsh
         run: |
-          $exe = Join-Path $env:RUNNER_TEMP 'vs_buildtools.exe'
-          Invoke-WebRequest -Uri https://aka.ms/vs/18/stable/vs_buildtools.exe -OutFile $exe
-          $p = Start-Process -FilePath $exe -Wait -PassThru -ArgumentList `
-            '--quiet','--wait','--norestart','--nocache', `
-            '--add','Microsoft.VisualStudio.Workload.VCTools', `
-            '--add','Microsoft.VisualStudio.Component.VC.Tools.ARM64', `
-            '--add','Microsoft.VisualStudio.Component.VC.ATL.ARM64'
-          Remove-Item $exe -Force -ErrorAction SilentlyContinue
-          if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
+          $installer = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer'
+          $vswhere = Join-Path $installer 'vswhere.exe'
+          $setup = Join-Path $installer 'setup.exe'
+          if (-not (Test-Path $vswhere) -or -not (Test-Path $setup)) {
+            throw "Visual Studio Installer is incomplete at $installer."
+          }
+
+          $toolsComponent = 'Microsoft.VisualStudio.Component.VC.14.44.17.14.x86.x64'
+          $atlComponent = 'Microsoft.VisualStudio.Component.VC.14.44.17.14.ATL'
+          $path = @(& $vswhere -latest -products '*' -requires $toolsComponent -property installationPath)[0]
+          if (-not $path) {
+            throw "No Visual Studio instance provides $toolsComponent."
+          }
+
+          $toolset = Get-ChildItem (Join-Path $path 'VC\Tools\MSVC') -Directory `
+            | Where-Object { $_.Name -like '14.44.*' } `
+            | Sort-Object Name -Descending `
+            | Select-Object -First 1
+          if (-not $toolset) {
+            throw "The selected Visual Studio instance has no 14.44 toolset."
+          }
+          $header = Join-Path $toolset.FullName 'atlmfc\include\atlbase.h'
+          if (Test-Path $header) {
+            Write-Host "ATL is already installed for $($toolset.Name)."
+            exit 0
+          }
+
+          $process = Start-Process -FilePath $setup -Wait -PassThru -ArgumentList @(
+            'modify',
+            '--installPath', "`"$path`"",
+            '--add', $atlComponent,
+            '--quiet', '--norestart', '--nocache'
+          )
+          if ($process.ExitCode -notin @(0, 3010)) {
+            throw "Visual Studio Installer exited with $($process.ExitCode)."
+          }
+          if (-not (Test-Path $header)) {
+            throw "$atlComponent completed without installing $header."
+          }
 
       - uses: Eden-CI/msvc-dev-cmd@master
         name: Native Tools Command Prompt
         with:
-          arch: ${{ matrix.arch }}
+          arch: x64
           sdk: ${{ env.SDK }}
-          toolset: ${{ matrix.arch == 'arm64' && '' || '14.44' }}
+          toolset: '14.44'
 
       - name: NuGet sources
         run: |
@@ -102,8 +127,8 @@ jobs:
             !${{ env.LibrariesPath }}\[qQ]t[_-]*
             ${{ env.LibrariesPath }}\cache_keys\*
             !${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
-          key: ${{ runner.OS }}-${{ matrix.arch }}-libs-rel-${{ env.CACHE_KEY }}
-          restore-keys: ${{ runner.OS }}-${{ matrix.arch }}-libs-rel-
+          key: ${{ runner.OS }}-x64-libs-rel-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-x64-libs-rel-
 
       - name: Restore Qt cache
         id: cache-qt
@@ -112,8 +137,8 @@ jobs:
           path: |
             ${{ env.LibrariesPath }}\[qQ]t[_-]*
             ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
-          key: ${{ runner.OS }}-${{ matrix.arch }}-qtrel-${{ env.CACHE_KEY }}
-          restore-keys: ${{ runner.OS }}-${{ matrix.arch }}-qtrel-
+          key: ${{ runner.OS }}-x64-qtrel-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-x64-qtrel-
 
       - name: Prepare libraries
         run: |
@@ -155,11 +180,10 @@ jobs:
         run: |
           cd %TBUILD%\%REPO_NAME%\Telegram
           call configure.bat ^
-            ${{ matrix.arch == 'arm64' && 'arm' || 'x64' }} ^
+            x64 ^
             -D TDESKTOP_API_ID=${{ vars.TDESKTOP_API_ID || '611335' }} ^
             -D TDESKTOP_API_HASH=${{ secrets.TDESKTOP_API_HASH || 'd524b414d21f4d37f08684c1df41ac9c' }} ^
             -D CMAKE_CONFIGURATION_TYPES=Release ^
-            -D DESKTOP_APP_ENABLE_LTO=ON ^
             -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
             -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
           cmake --build ..\out --config Release --parallel
@@ -168,7 +192,7 @@ jobs:
         shell: pwsh
         run: |
           $out = "$env:TBUILD\$env:REPO_NAME\out\Release"
-          $stage = Join-Path $env:RUNNER_TEMP "makugram-win-${{ matrix.arch }}"
+          $stage = Join-Path $env:RUNNER_TEMP "makugram-win-x64"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           Copy-Item (Join-Path $out "Telegram.exe") $stage
           $modules = Join-Path $out "modules"
@@ -176,13 +200,13 @@ jobs:
             Copy-Item $modules (Join-Path $stage "modules") -Recurse
           }
           New-Item -ItemType Directory -Force -Path "artifact" | Out-Null
-          Compress-Archive -Path "$stage\*" -DestinationPath "artifact\MakuGram-win-${{ matrix.arch }}.zip" -Force
+          Compress-Archive -Path "$stage\*" -DestinationPath "artifact\MakuGram-win-x64.zip" -Force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: MakuGram-win-${{ matrix.arch }}
-          path: artifact/MakuGram-win-${{ matrix.arch }}.zip
+          name: MakuGram-win-x64
+          path: artifact/MakuGram-win-x64.zip
           retention-days: 30
 
   linux:
@@ -269,7 +293,6 @@ jobs:
             $IMAGE_TAG \
             /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
             -D CMAKE_CONFIGURATION_TYPES=Release \
-            -D DESKTOP_APP_ENABLE_LTO=ON \
             -D TDESKTOP_API_ID=${{ vars.TDESKTOP_API_ID || '611335' }} \
             -D TDESKTOP_API_HASH=${{ secrets.TDESKTOP_API_HASH || 'd524b414d21f4d37f08684c1df41ac9c' }} \
             -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \
@@ -309,7 +332,6 @@ jobs:
       TDE2E: 51743dfd01dff6179e2d8f7095729caa4e2222e9
       TLOTTIE: 92df98dc209bc39b1e567ec74a8c86a0af5239de
       WALLET_ENGINE: e59e0d89d7ee90c388bf36e3334c5b276f396697
-      RUST_PATCHES: aec474953ff7ee9b6e4cd9b658288ea86d124f3
       RUST_TOOLCHAIN: 1.96.1
 
     steps:
@@ -344,7 +366,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ env.LibrariesPath }}/local/tdesktop_rust
-          key: ${{ runner.OS }}-${{ matrix.arch }}-tdesktop-rust-${{ env.TLOTTIE }}-${{ env.WALLET_ENGINE }}-${{ env.RUST_PATCHES }}-${{ env.RUST_TOOLCHAIN }}-${{ env.CACHE_KEY }}
+          key: ${{ runner.OS }}-${{ matrix.arch }}-tdesktop-rust-${{ env.TLOTTIE }}-${{ env.WALLET_ENGINE }}-${{ env.RUST_TOOLCHAIN }}-${{ env.CACHE_KEY }}
 
       - name: Build Rust libraries
         if: steps.cache-tdesktop-rust.outputs.cache-hit != 'true'
@@ -357,12 +379,7 @@ jobs:
           export RUSTUP_TOOLCHAIN="$RUST_TOOLCHAIN"
           export PATH="$CARGO_HOME/bin:$PATH"
 
-          git init rust-patches
-          cd rust-patches
-          git remote add origin "$GIT/desktop-app/patches.git"
-          git fetch --depth=1 origin "$RUST_PATCHES"
-          git reset --hard FETCH_HEAD
-          cd "$LibrariesPath"
+          git clone --depth=1 "$GIT/desktop-app/patches.git" rust-patches
 
           git init tlottie
           cd tlottie
