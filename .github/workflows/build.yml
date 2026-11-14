@@ -25,12 +25,23 @@ jobs:
         shell: cmd
 
     steps:
+      - name: Free disk space on C:
+        shell: pwsh
+        run: |
+          Write-Host "Freeing disk space on C:..."
+          Remove-Item -Recurse -Force 'C:\hostedtoolcache' -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force 'C:\ProgramData\Chocolatey' -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Android\Sdk" -ErrorAction SilentlyContinue
+          Get-PSDrive C, D
+
       - name: Prepare directories
         run: |
-          mkdir %userprofile%\TBuild\Libraries
-          mklink /d %GITHUB_WORKSPACE%\TBuild %userprofile%\TBuild
-          echo TBUILD=%GITHUB_WORKSPACE%\TBuild>>%GITHUB_ENV%
-          echo LibrariesPath=%GITHUB_WORKSPACE%\TBuild\Libraries\win64>>%GITHUB_ENV%
+          if not exist "D:\TBuild\Libraries" mkdir D:\TBuild\Libraries
+          if not exist "D:\TBuild\ThirdParty" mkdir D:\TBuild\ThirdParty
+          if exist "%userprofile%\TBuild" rmdir /s /q "%userprofile%\TBuild"
+          mklink /j "%userprofile%\TBuild" D:\TBuild
+          echo TBUILD=D:\TBuild>>%GITHUB_ENV%
+          echo LibrariesPath=D:\TBuild\Libraries\win64>>%GITHUB_ENV%
 
       - name: Get repository name
         shell: bash
@@ -228,7 +239,7 @@ jobs:
           sudo apt update
           sudo apt install -y python3-jinja2
           cd Telegram/build/docker/centos_env
-          DOCKERFILE=$(DEBUG= python3 gen_dockerfile.py)
+          DOCKERFILE=$(DEBUG= LTO= python3 gen_dockerfile.py)
           echo "$DOCKERFILE" > Dockerfile
           rm -rf __pycache__
 
@@ -296,7 +307,8 @@ jobs:
             -D TDESKTOP_API_ID=${{ vars.TDESKTOP_API_ID || '611335' }} \
             -D TDESKTOP_API_HASH=${{ secrets.TDESKTOP_API_HASH || 'd524b414d21f4d37f08684c1df41ac9c' }} \
             -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \
-            -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+            -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON \
+            -D DESKTOP_APP_ENABLE_LTO=OFF
 
       - name: Package artifact
         run: |
@@ -322,8 +334,6 @@ jobs:
         include:
           - os: macos-latest
             arch: arm64
-          - os: macos-15-intel
-            arch: x64
 
     env:
       GIT: https://github.com
@@ -361,9 +371,9 @@ jobs:
           echo "RNNOISE=$(curl -sSL --header 'Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' https://api.github.com/repos/xiph/rnnoise/git/refs/heads/master | jq -r .object.sha)" >> $GITHUB_ENV
           echo "WEBRTC=$(curl -sSL --header 'Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' https://api.github.com/repos/desktop-app/tg_owt/git/refs/heads/master | jq -r .object.sha)" >> $GITHUB_ENV
 
-      - name: Rust libraries cache
+      - name: Restore Rust libraries cache
         id: cache-tdesktop-rust
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.LibrariesPath }}/local/tdesktop_rust
           key: ${{ runner.OS }}-${{ matrix.arch }}-tdesktop-rust-${{ env.TLOTTIE }}-${{ env.WALLET_ENGINE }}-${{ env.RUST_TOOLCHAIN }}-${{ env.CACHE_KEY }}
@@ -417,9 +427,16 @@ jobs:
             --library --out-dir "$LibrariesPath/local/tdesktop_rust/include/wallet_engine" \
             target/release/libtdesktop_rust.dylib
 
-      - name: RNNoise cache
+      - name: Save Rust libraries cache
+        if: steps.cache-tdesktop-rust.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.LibrariesPath }}/local/tdesktop_rust
+          key: ${{ steps.cache-tdesktop-rust.outputs.cache-primary-key }}
+
+      - name: Restore RNNoise cache
         id: cache-rnnoise
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.LibrariesPath }}/local/rnnoise
           key: ${{ runner.OS }}-${{ matrix.arch }}-rnnoise-${{ env.RNNOISE }}-${{ env.CACHE_KEY }}
@@ -435,9 +452,16 @@ jobs:
           make -j"$(sysctl -n hw.logicalcpu)"
           make install
 
-      - name: WebRTC cache
+      - name: Save RNNoise cache
+        if: steps.cache-rnnoise.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.LibrariesPath }}/local/rnnoise
+          key: ${{ steps.cache-rnnoise.outputs.cache-primary-key }}
+
+      - name: Restore WebRTC cache
         id: cache-webrtc
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.LibrariesPath }}/local/tg_owt
           key: ${{ runner.OS }}-${{ matrix.arch }}-webrtc-${{ env.WEBRTC }}-${{ env.CACHE_KEY }}
@@ -449,12 +473,19 @@ jobs:
           git clone --depth=1 --recursive --shallow-submodules "$GIT/desktop-app/tg_owt.git"
           cd tg_owt
           cmake -Bbuild . -DCMAKE_INSTALL_PREFIX="$LibrariesPath/local/tg_owt"
-          cmake --build build
+          cmake --build build --parallel
           cmake --install build
 
-      - name: TDE2E cache
+      - name: Save WebRTC cache
+        if: steps.cache-webrtc.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.LibrariesPath }}/local/tg_owt
+          key: ${{ steps.cache-webrtc.outputs.cache-primary-key }}
+
+      - name: Restore TDE2E cache
         id: cache-tde2e
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.LibrariesPath }}/local/tde2e
           key: ${{ runner.OS }}-${{ matrix.arch }}-tde2e-${{ env.TDE2E }}-${{ env.CACHE_KEY }}
@@ -469,8 +500,15 @@ jobs:
           git fetch --depth=1 origin "$TDE2E"
           git reset --hard FETCH_HEAD
           cmake -Bbuild . -DCMAKE_INSTALL_PREFIX="$LibrariesPath/local/tde2e" -DTD_E2E_ONLY=ON
-          cmake --build build
+          cmake --build build --parallel
           cmake --install build
+
+      - name: Save TDE2E cache
+        if: steps.cache-tde2e.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.LibrariesPath }}/local/tde2e
+          key: ${{ steps.cache-tde2e.outputs.cache-primary-key }}
 
       - name: Build
         run: |
@@ -482,7 +520,7 @@ jobs:
             -DTDESKTOP_API_HASH=${{ secrets.TDESKTOP_API_HASH || 'd524b414d21f4d37f08684c1df41ac9c' }} \
             -DDESKTOP_APP_DISABLE_AUTOUPDATE=ON \
             -DDESKTOP_APP_DISABLE_CRASH_REPORTS=ON
-          cmake --build build
+          cmake --build build --parallel
           macdeployqt build/Telegram.app
           codesign --remove-signature build/Telegram.app
 
