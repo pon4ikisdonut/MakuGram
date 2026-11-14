@@ -25,7 +25,7 @@ jobs:
         shell: cmd
 
     steps:
-      - name: Free disk space on C:
+      - name: "Free disk space on C drive"
         shell: pwsh
         run: |
           Write-Host "Freeing disk space on C:..."
