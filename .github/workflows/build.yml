@@ -36,12 +36,12 @@ jobs:
 
       - name: Prepare directories
         run: |
-          if not exist "D:\TBuild\Libraries" mkdir D:\TBuild\Libraries
-          if not exist "D:\TBuild\ThirdParty" mkdir D:\TBuild\ThirdParty
+          if not exist "%GITHUB_WORKSPACE%\TBuild\Libraries" mkdir "%GITHUB_WORKSPACE%\TBuild\Libraries"
+          if not exist "%GITHUB_WORKSPACE%\TBuild\ThirdParty" mkdir "%GITHUB_WORKSPACE%\TBuild\ThirdParty"
           if exist "%userprofile%\TBuild" rmdir /s /q "%userprofile%\TBuild"
-          mklink /j "%userprofile%\TBuild" D:\TBuild
-          echo TBUILD=D:\TBuild>>%GITHUB_ENV%
-          echo LibrariesPath=D:\TBuild\Libraries\win64>>%GITHUB_ENV%
+          mklink /j "%userprofile%\TBuild" "%GITHUB_WORKSPACE%\TBuild"
+          echo TBUILD=%GITHUB_WORKSPACE%\TBuild>>%GITHUB_ENV%
+          echo LibrariesPath=%GITHUB_WORKSPACE%\TBuild\Libraries\win64>>%GITHUB_ENV%
 
       - name: Get repository name
         shell: bash
