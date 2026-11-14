@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/window_peer_menu.h"
 
+#include "makugram/makugram_lang.h"
 #include "base/call_delayed.h"
 #include "menu/menu_check_item.h"
 #include "menu/menu_mark_as_read.h"
@@ -297,8 +298,12 @@ void ExecuteDeleteIds(
 		if (*offset >= ids->size()) {
 			session->data().sendHistoryChangeNotifications();
 			controller->showToast(onlyMedia
-				? QString::fromUtf8("Удалено медиа: %1").arg(totalCount)
-				: QString::fromUtf8("Удалено сообщений: %1").arg(totalCount));
+				? MakuGram::Tr::Get(
+					QString::fromUtf8("Удалено медиа: %1").arg(totalCount),
+					QString::fromUtf8("Media deleted: %1").arg(totalCount))
+				: MakuGram::Tr::Get(
+					QString::fromUtf8("Удалено сообщений: %1").arg(totalCount),
+					QString::fromUtf8("Messages deleted: %1").arg(totalCount)));
 			return;
 		}
 		const auto chunkSize = std::min(100, int(ids->size() - *offset));
@@ -320,7 +325,7 @@ void ExecuteDeleteIds(
 			)).done([=](const MTPmessages_AffectedMessages &) {
 				(*deleteNextChunk)();
 			}).fail([=](const MTP::Error &error) {
-				controller->showToast(QString::fromUtf8("Ошибка удаления: ") + error.type());
+				controller->showToast(MakuGram::Tr::Get(QString::fromUtf8("Ошибка удаления: "), u"Delete error: "_q) + error.type());
 			}).send();
 		} else {
 			using Flag = MTPmessages_DeleteMessages::Flag;
@@ -330,7 +335,7 @@ void ExecuteDeleteIds(
 			)).done([=](const MTPmessages_AffectedMessages &) {
 				(*deleteNextChunk)();
 			}).fail([=](const MTP::Error &error) {
-				controller->showToast(QString::fromUtf8("Ошибка удаления: ") + error.type());
+				controller->showToast(MakuGram::Tr::Get(QString::fromUtf8("Ошибка удаления: "), u"Delete error: "_q) + error.type());
 			}).send();
 		}
 	};
@@ -440,16 +445,24 @@ void DeleteOwnMessagesByDates(
 				(*searchNext)(lastId);
 			} else if (allIds->isEmpty()) {
 				controller->showToast(onlyMedia
-					? QString::fromUtf8("Медиа за выбранный период не найдено")
-					: QString::fromUtf8("Сообщений за выбранный период не найдено"));
+					? MakuGram::Tr::Get(
+						QString::fromUtf8("Медиа за выбранный период не найдено"),
+						u"No media found for selected period"_q)
+					: MakuGram::Tr::Get(
+						QString::fromUtf8("Сообщений за выбранный период не найдено"),
+						u"No messages found for selected period"_q));
 			} else {
 				const auto count = allIds->size();
 				const auto title = onlyMedia
-					? QString::fromUtf8("Удаление медиа")
-					: QString::fromUtf8("Удаление сообщений");
+					? MakuGram::Tr::Get(QString::fromUtf8("Удаление медиа"), u"Delete media"_q)
+					: MakuGram::Tr::Get(QString::fromUtf8("Удаление сообщений"), u"Delete messages"_q);
 				const auto text = onlyMedia
-					? QString::fromUtf8("Найдено медиа: %1 %2.\n\nВы уверены, что хотите удалить их?").arg(count).arg(periodText)
-					: QString::fromUtf8("Найдено сообщений: %1 %2.\n\nВы уверены, что хотите удалить их?").arg(count).arg(periodText);
+					? MakuGram::Tr::Get(
+						QString::fromUtf8("Найдено медиа: %1 %2.\n\nВы уверены, что хотите удалить их?").arg(count).arg(periodText),
+						QString::fromUtf8("Found media: %1 %2.\n\nAre you sure you want to delete them?").arg(count).arg(periodText))
+					: MakuGram::Tr::Get(
+						QString::fromUtf8("Найдено сообщений: %1 %2.\n\nВы уверены, что хотите удалить их?").arg(count).arg(periodText),
+						QString::fromUtf8("Found messages: %1 %2.\n\nAre you sure you want to delete them?").arg(count).arg(periodText));
 
 				controller->show(Ui::MakeConfirmBox({
 					.text = text,
@@ -463,7 +476,7 @@ void DeleteOwnMessagesByDates(
 				}));
 			}
 		}).fail([=](const MTP::Error &error) {
-			controller->showToast(QString::fromUtf8("Ошибка поиска: ") + error.type());
+			controller->showToast(MakuGram::Tr::Get(QString::fromUtf8("Ошибка поиска: "), u"Search error: "_q) + error.type());
 		}).send();
 	};
 
@@ -1084,16 +1097,16 @@ void Filler::addMassDeleteMyMessages() {
 		}
 	}
 	_addAction(
-		QString::fromUtf8("Удалить свои соо. за период..."),
+		MakuGram::Tr::Get(QString::fromUtf8("Удалить свои соо. за период..."), u"Delete own messages for period..."_q),
 		[controller = _controller, peer = _peer] {
-			static const auto options = std::vector<QString>{
-				QString::fromUtf8("За сегодня"),
-				QString::fromUtf8("За последние 7 дней"),
-				QString::fromUtf8("За последний месяц"),
-				QString::fromUtf8("За всё время"),
+			const auto options = std::vector<QString>{
+				MakuGram::Tr::Get(QString::fromUtf8("За сегодня"), u"Today"_q),
+				MakuGram::Tr::Get(QString::fromUtf8("За последние 7 дней"), u"Last 7 days"_q),
+				MakuGram::Tr::Get(QString::fromUtf8("За последний месяц"), u"Last month"_q),
+				MakuGram::Tr::Get(QString::fromUtf8("За всё время"), u"All time"_q),
 			};
 			controller->show(Box([=](not_null<Ui::GenericBox*> box) {
-				box->setTitle(rpl::single(QString::fromUtf8("Удаление сообщений за период")));
+				box->setTitle(rpl::single(MakuGram::Tr::Get(QString::fromUtf8("Удаление сообщений за период"), u"Delete messages for period"_q)));
 				box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
 
 				const auto group = std::make_shared<Ui::RadiobuttonGroup>(-1);
@@ -1127,7 +1140,7 @@ void Filler::addMassDeleteMyMessages() {
 				const auto onlyMediaCheck = layout->add(
 					object_ptr<Ui::Checkbox>(
 						layout,
-						QString::fromUtf8("Удалить только медиа"),
+						MakuGram::Tr::Get(QString::fromUtf8("Удалить только медиа"), u"Delete media only"_q),
 						false,
 						st::defaultBoxCheckbox),
 					QMargins(
@@ -1157,13 +1170,13 @@ void Filler::addMassDeleteMyMessages() {
 					}
 					const auto periodText = [&] {
 						if (index == 0) {
-							return QString::fromUtf8("за сегодня");
+							return MakuGram::Tr::Get(QString::fromUtf8("за сегодня"), u"for today"_q);
 						} else if (index == 1) {
-							return QString::fromUtf8("за последние 7 дней");
+							return MakuGram::Tr::Get(QString::fromUtf8("за последние 7 дней"), u"for the last 7 days"_q);
 						} else if (index == 2) {
-							return QString::fromUtf8("за последний месяц");
+							return MakuGram::Tr::Get(QString::fromUtf8("за последний месяц"), u"for the last month"_q);
 						} else {
-							return QString::fromUtf8("за всё время");
+							return MakuGram::Tr::Get(QString::fromUtf8("за всё время"), u"for all time"_q);
 						}
 					}();
 					if (onlyMedia || peer->asChannel()) {

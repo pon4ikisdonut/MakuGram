@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_widget.h"
 #include "makugram/makugram_settings.h"
+#include "makugram/makugram_lang.h"
 
 #include "base/call_delayed.h"
 #include "base/qt/qt_key_modifiers.h"
@@ -736,8 +737,8 @@ Widget::Widget(
 	if (_unreadToggle) {
 		const auto updateToggleState = [=](bool active) {
 			_unreadToggle->setAccessibleName(active
-				? QString::fromUtf8("Показать все чаты")
-				: QString::fromUtf8("Только непрочитанные"));
+				? MakuGram::Tr::Get(QString::fromUtf8("Показать все чаты"), u"Show all chats"_q)
+				: MakuGram::Tr::Get(QString::fromUtf8("Только непрочитанные"), u"Unread only"_q));
 			_unreadToggle->setIconOverride(active
 				? &st::menuIconMarkRead
 				: &st::menuIconMarkUnread);

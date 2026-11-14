@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/info_profile_actions.h"
 #include "makugram/makugram_settings.h"
 #include "makugram/makugram_details.h"
+#include "makugram/makugram_lang.h"
 
 #include "api/api_blocked_peers.h"
 #include "api/api_chat_participants.h"
@@ -254,7 +255,7 @@ base::options::toggle ShowChannelJoinedBelowAbout({
 			if (peer->isUser()) {
 				const auto reg = MakuGram::EstimatedRegistrationDate(raw);
 				if (!reg.isEmpty()) {
-					value.append(Italic(QString::fromUtf8("\nРегистрация: ") + reg));
+					value.append(Italic(MakuGram::Tr::Get(QString::fromUtf8("\nРегистрация: "), u"\nRegistered: "_q) + reg));
 				}
 			}
 		}
@@ -303,7 +304,7 @@ void SetupAboutPeerIdDrag(
 			}
 			void onClick(ClickContext context) const override {
 				QGuiApplication::clipboard()->setText(_id);
-				Ui::Toast::Show(QString::fromUtf8("ID скопирован: ") + _id);
+				Ui::Toast::Show(MakuGram::Tr::Get(QString::fromUtf8("ID скопирован: "), u"ID copied: "_q) + _id);
 			}
 			QString dragText() const override {
 				return _id;

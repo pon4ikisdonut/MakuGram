@@ -27,8 +27,8 @@ StartWidget::StartWidget(
 	setMouseTracking(true);
 	setTitleText(rpl::single(u"MakuGram"_q));
 	setDescriptionText(MakuGram::Tr::Value(
-		"Добро пожаловать в MakuGram.\nФорк Telegram для Windows.",
-		"Welcome to the MakuGram app.\nTelegram Fork for Windows."
+		QString::fromUtf8("Добро пожаловать в MakuGram.\nБыстрый и удобный форк Telegram."),
+		u"Welcome to MakuGram.\nFast and convenient Telegram fork."_q
 	));
 	show();
 }

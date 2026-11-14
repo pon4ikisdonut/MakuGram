@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_message.h"
 #include "makugram/makugram_settings.h"
 #include "makugram/makugram_details.h"
+#include "makugram/makugram_lang.h"
 
 #include "api/api_suggest_post.h"
 #include "api/api_transcribes.h"
@@ -1606,8 +1607,10 @@ QSize Message::performCountOptimalSize() {
 					&& from
 					&& from->isUser()
 					&& MakuGram::IsNewbieInChat(history()->peer, from->asUser());
-				static const auto kNewbieText = QString::fromUtf8("[Новичок] ");
-				const auto newbieWidth = isNewbie ? st::msgNameFont->width(kNewbieText) : 0;
+				const auto newbieText = isNewbie
+					? MakuGram::Tr::Get(QString::fromUtf8("[Новичок] "), u"[Newbie] "_q)
+					: QString();
+				const auto newbieWidth = isNewbie ? st::msgNameFont->width(newbieText) : 0;
 				auto namew = st::msgPadding.left()
 					+ newbieWidth
 					+ name.maxWidth()
@@ -2544,13 +2547,15 @@ void Message::paintFromName(
 		&& from
 		&& from->isUser()
 		&& MakuGram::IsNewbieInChat(history()->peer, from->asUser());
-	static const auto kNewbieText = QString::fromUtf8("[Новичок] ");
-	const auto newbieWidth = isNewbie ? st::msgNameFont->width(kNewbieText) : 0;
+	const auto newbieText = isNewbie
+		? MakuGram::Tr::Get(QString::fromUtf8("[Новичок] "), u"[Newbie] "_q)
+		: QString();
+	const auto newbieWidth = isNewbie ? st::msgNameFont->width(newbieText) : 0;
 	if (newbieWidth > 0 && availableWidth > newbieWidth) {
 		static const auto kNewbieYellow = QColor(235, 170, 25);
 		p.setFont(st::msgNameFont);
 		p.setPen(kNewbieYellow);
-		p.drawText(availableLeft, trect.top() + st::msgNameFont->ascent, kNewbieText);
+		p.drawText(availableLeft, trect.top() + st::msgNameFont->ascent, newbieText);
 		availableLeft += newbieWidth;
 		availableWidth -= newbieWidth;
 	}
@@ -4280,8 +4285,10 @@ bool Message::getStateFromName(
 			&& from
 			&& from->isUser()
 			&& MakuGram::IsNewbieInChat(history()->peer, from->asUser());
-		static const auto kNewbieText = QString::fromUtf8("[Новичок] ");
-		const auto newbieWidth = isNewbie ? st::msgNameFont->width(kNewbieText) : 0;
+		const auto newbieText = isNewbie
+			? MakuGram::Tr::Get(QString::fromUtf8("[Новичок] "), u"[Newbie] "_q)
+			: QString();
+		const auto newbieWidth = isNewbie ? st::msgNameFont->width(newbieText) : 0;
 		if (newbieWidth > 0 && availableWidth > newbieWidth) {
 			if (point.x() >= availableLeft && point.x() < availableLeft + newbieWidth) {
 				outResult->link = fromLink();

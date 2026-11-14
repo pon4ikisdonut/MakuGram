@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 #include "styles/style_info_community_requests_widget.h"
 #include "makugram/makugram_details.h"
+#include "makugram/makugram_lang.h"
 
 #include "api/api_invite_links.h"
 #include "api/api_chat_participants.h"
@@ -325,7 +326,7 @@ RequestsBoxController::RowHelper::RowHelper(bool isGroup)
 , _banRectOver(
 	st::requestsAcceptButton.height / 2,
 	BanButtonBgOver())
-, _acceptText(QString::fromUtf8("Принять"))
+, _acceptText(tr::lng_group_requests_add(tr::now))
 , _rejectText(tr::lng_group_requests_dismiss(tr::now))
 , _banText(tr::lng_makugram_ban_button(tr::now))
 , _acceptTextWidth(st::requestsAcceptButton.style.font->width(_acceptText))
@@ -445,11 +446,11 @@ void RequestsBoxController::setupMassActions() {
 
 	const auto acceptAll = Ui::CreateChild<Ui::RoundButton>(
 		raw,
-		rpl::single(QString::fromUtf8("Принять всех")),
+		MakuGram::Tr::Value(QString::fromUtf8("Принять всех"), u"Approve All"_q),
 		st::requestsAddAllButton);
 	const auto rejectAll = Ui::CreateChild<Ui::RoundButton>(
 		raw,
-		rpl::single(QString::fromUtf8("Отклонить всех")),
+		MakuGram::Tr::Value(QString::fromUtf8("Отклонить всех"), u"Dismiss All"_q),
 		st::requestsDeclineAllButton);
 	acceptAll->setFullRadius(true);
 	rejectAll->setFullRadius(true);
@@ -493,8 +494,8 @@ void RequestsBoxController::processAllRequests(bool approved) {
 		refreshDescription();
 		delegate()->peerListRefreshRows();
 		delegate()->peerListUiShow()->showToast(approved
-			? QString::fromUtf8("Все заявки одобрены")
-			: QString::fromUtf8("Все заявки отклонены"));
+			? MakuGram::Tr::Get(QString::fromUtf8("Все заявки одобрены"), u"All requests approved"_q)
+			: MakuGram::Tr::Get(QString::fromUtf8("Все заявки отклонены"), u"All requests dismissed"_q));
 	})).send();
 }
 

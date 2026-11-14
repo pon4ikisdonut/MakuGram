@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/community_requests/info_community_requests_widget.h"
 
+#include "makugram/makugram_lang.h"
 #include "api/api_communities.h"
 #include "apiwrap.h"
 #include "base/timer.h"
@@ -1383,11 +1384,11 @@ std::unique_ptr<Ui::RpWidget> Widget::setupBottomBar() {
 		st::requestsSectionBottomMargin);
 	const auto declineAll = Ui::CreateChild<Ui::RoundButton>(
 		row,
-		rpl::single(QString::fromUtf8("Отклонить всех")),
+		MakuGram::Tr::Value(QString::fromUtf8("Отклонить всех"), u"Dismiss All"_q),
 		st::requestsDeclineAllButton);
 	const auto addAll = Ui::CreateChild<Ui::RoundButton>(
 		row,
-		rpl::single(QString::fromUtf8("Принять всех")),
+		MakuGram::Tr::Value(QString::fromUtf8("Принять всех"), u"Approve All"_q),
 		st::requestsAddAllButton);
 	declineAll->setClickedCallback([=] { processAll(true); });
 	addAll->setClickedCallback([=] { processAll(false); });

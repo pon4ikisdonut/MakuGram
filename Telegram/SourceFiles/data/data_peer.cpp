@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_peer.h"
 
+#include <unordered_map>
+#include <mutex>
 #include "api/api_sensitive_content.h"
 #include "data/data_user.h"
 #include "data/data_chat.h"
@@ -462,8 +464,23 @@ void PeerData::paintUserpic(
 
 	if (MakuGram::Settings::instance().streamerMode()) {
 		if (!view.cached.isNull()) {
-			auto blurred = view.cached;
-			MakuGram::BlurImageStrong(blurred);
+			static std::mutex blurMutex;
+			static std::unordered_map<qint64, QImage> blurredCache;
+			const auto key = view.cached.cacheKey();
+			auto blurred = [&]() -> QImage {
+				const auto lock = std::lock_guard(blurMutex);
+				const auto it = blurredCache.find(key);
+				return (it != blurredCache.end()) ? it->second : QImage();
+			}();
+			if (blurred.isNull()) {
+				blurred = view.cached;
+				MakuGram::BlurImageStrong(blurred);
+				const auto lock = std::lock_guard(blurMutex);
+				if (blurredCache.size() > 500) {
+					blurredCache.clear();
+				}
+				blurredCache[key] = blurred;
+			}
 			p.drawImage(QRect(context.position, QSize(size, size)), blurred);
 			return;
 		}

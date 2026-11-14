@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_list_widget.h"
 #include "history/history_inner_widget.h"
 #include "makugram/makugram_settings.h"
+#include "makugram/makugram_lang.h"
 
 #include "apiwrap.h"
 #include "api/api_attached_stickers.h"
@@ -59,6 +60,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/ui_utility.h"
 #include "info/info_memento.h"
 #include "makugram/makugram_settings.h"
+#include "makugram/makugram_lang.h"
 #include "info/info_controller.h"
 #include "info/statistics/info_statistics_widget.h"
 #include "boxes/delete_messages_box.h"
@@ -513,7 +515,9 @@ public:
 		auto resRect = QRect();
 		auto row1Top = bottomButtonsTop - gapAboveButtons - badgeHeight;
 		if (hasRes) {
-			_resText = QString::fromUtf8("Разрешение: %1х%2").arg(res.width()).arg(res.height());
+			_resText = MakuGram::Tr::Get(
+				QString::fromUtf8("Разрешение: %1х%2").arg(res.width()).arg(res.height()),
+				QString::fromUtf8("Resolution: %1x%2").arg(res.width()).arg(res.height()));
 			const auto resWidth = font->width(_resText) + 2 * padH;
 			resRect = QRect(contentRight - resWidth, row1Top, resWidth, badgeHeight);
 		} else {
@@ -529,9 +533,10 @@ public:
 			selRect = QRect(contentRight - circleSide, row2Top + (badgeHeight - circleSide) / 2, circleSide, circleSide);
 
 			const auto count = _owner->makuSelectedCount();
+			const auto fwdPrefix = MakuGram::Tr::Get(QString::fromUtf8("Переслать"), u"Forward"_q);
 			const auto fwdText = (count == 0)
-				? QString::fromUtf8("Переслать")
-				: QString::fromUtf8("Переслать (%1)").arg(count);
+				? fwdPrefix
+				: QString("%1 (%2)").arg(fwdPrefix).arg(count);
 			const auto fwdWidth = font->width(fwdText) + 2 * padH;
 			fwdRect = QRect(selRect.left() - 8 - fwdWidth, row2Top, fwdWidth, badgeHeight);
 		}
@@ -589,9 +594,10 @@ protected:
 
 		if (!_forwardRect.isEmpty()) {
 			const auto count = _owner->makuSelectedCount();
+			const auto fwdPrefix = MakuGram::Tr::Get(QString::fromUtf8("Переслать"), u"Forward"_q);
 			const auto fwdText = (count == 0)
-				? QString::fromUtf8("Переслать")
-				: QString::fromUtf8("Переслать (%1)").arg(count);
+				? fwdPrefix
+				: QString("%1 (%2)").arg(fwdPrefix).arg(count);
 
 			const auto over = (_overForward || _downForward);
 			p.setPen(Qt::NoPen);

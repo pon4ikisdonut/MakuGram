@@ -14,15 +14,16 @@ a custom Telegram Desktop client fork.
 namespace MakuGram {
 namespace {
 
-bool MatchesPattern(const QString &text, const SpamPattern &p) {
+bool MatchesPattern(const QString &text, const QString &normText, const SpamPattern &p) {
 	if (text.isEmpty()) {
 		return false;
 	}
 	if (p.type == PatternType::Regex) {
 		return p.regex.isValid() && p.regex.match(text).hasMatch();
 	}
-
-	const auto normText = NormalizeRussianText(text);
+	if (normText.isEmpty()) {
+		return false;
+	}
 
 	bool anySubstr = false;
 	for (const auto &v : p.variants) {
@@ -123,8 +124,14 @@ bool IsSpamKeywordMessageHidden(const HistoryItem *item) {
 	if (text.isEmpty()) {
 		return false;
 	}
+	QString normText;
+	bool normComputed = false;
 	for (const auto &p : patterns) {
-		if (MatchesPattern(text, p)) {
+		if (p.type != PatternType::Regex && !normComputed) {
+			normText = NormalizeRussianText(text);
+			normComputed = true;
+		}
+		if (MatchesPattern(text, normText, p)) {
 			return true;
 		}
 	}
@@ -148,8 +155,14 @@ bool IsSearchMessageHidden(const HistoryItem *item) {
 		if (text.isEmpty()) {
 			return false;
 		}
+		QString normText;
+		bool normComputed = false;
 		for (const auto &p : patterns) {
-			if (MatchesPattern(text, p)) {
+			if (p.type != PatternType::Regex && !normComputed) {
+				normText = NormalizeRussianText(text);
+				normComputed = true;
+			}
+			if (MatchesPattern(text, normText, p)) {
 				return true;
 			}
 		}
