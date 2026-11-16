@@ -29,10 +29,16 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Freeing disk space on C:..."
-          Remove-Item -Recurse -Force 'C:\hostedtoolcache' -ErrorAction SilentlyContinue
-          Remove-Item -Recurse -Force 'C:\ProgramData\Chocolatey' -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Android\Sdk" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force 'C:\hostedtoolcache\windows\Java*' -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force 'C:\hostedtoolcache\windows\go' -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force 'C:\hostedtoolcache\windows\Ruby' -ErrorAction SilentlyContinue
           Get-PSDrive C, D
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
 
       - name: Prepare directories
         run: |
@@ -42,6 +48,7 @@ jobs:
           mklink /j "%userprofile%\TBuild" "%GITHUB_WORKSPACE%\TBuild"
           echo TBUILD=%GITHUB_WORKSPACE%\TBuild>>%GITHUB_ENV%
           echo LibrariesPath=%GITHUB_WORKSPACE%\TBuild\Libraries\win64>>%GITHUB_ENV%
+          python --version
 
       - name: Get repository name
         shell: bash
