@@ -79,6 +79,22 @@ public:
 	void setShowProfileDetails(bool enabled);
 	[[nodiscard]] rpl::producer<bool> showProfileDetailsChanges() const;
 
+	[[nodiscard]] bool ghostMode() const;
+	void setGhostMode(bool enabled);
+	[[nodiscard]] rpl::producer<bool> ghostModeChanges() const;
+
+	[[nodiscard]] bool ghostHideOnline() const;
+	void setGhostHideOnline(bool enabled);
+	[[nodiscard]] rpl::producer<bool> ghostHideOnlineChanges() const;
+
+	[[nodiscard]] bool ghostMarkRead() const;
+	void setGhostMarkRead(bool enabled);
+	[[nodiscard]] rpl::producer<bool> ghostMarkReadChanges() const;
+
+	[[nodiscard]] bool ghostHideStoriesView() const;
+	void setGhostHideStoriesView(bool enabled);
+	[[nodiscard]] rpl::producer<bool> ghostHideStoriesViewChanges() const;
+
 	[[nodiscard]] bool hideTypingStatus() const;
 	void setHideTypingStatus(bool enabled);
 	[[nodiscard]] rpl::producer<bool> hideTypingStatusChanges() const;
@@ -181,6 +197,10 @@ private:
 	std::vector<SpamPattern> _spamPatterns;
 	bool _showNewbieBadge = false;
 	bool _showProfileDetails = true;
+	bool _ghostMode = false;
+	bool _ghostHideOnline = false;
+	bool _ghostMarkRead = false;
+	bool _ghostHideStoriesView = false;
 	bool _hideTypingStatus = false;
 	bool _bypassRestrictedContent = false;
 	bool _showUnreadFilterButton = true;
@@ -211,6 +231,10 @@ private:
 	rpl::event_stream<QString> _spamKeywordsChanges;
 	rpl::event_stream<bool> _showNewbieBadgeChanges;
 	rpl::event_stream<bool> _showProfileDetailsChanges;
+	rpl::event_stream<bool> _ghostModeChanges;
+	rpl::event_stream<bool> _ghostHideOnlineChanges;
+	rpl::event_stream<bool> _ghostMarkReadChanges;
+	rpl::event_stream<bool> _ghostHideStoriesViewChanges;
 	rpl::event_stream<bool> _hideTypingStatusChanges;
 	rpl::event_stream<bool> _bypassRestrictedContentChanges;
 	rpl::event_stream<bool> _showUnreadFilterButtonChanges;

@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_stories.h"
 
+#include "makugram/makugram_settings.h"
 #include "base/unixtime.h"
 #include "apiwrap.h"
 #include "core/application.h"
@@ -1418,6 +1419,11 @@ void Stories::checkQuitPreventFinished() {
 }
 
 void Stories::sendMarkAsReadRequests() {
+	if (MakuGram::Settings::instance().ghostHideStoriesView()) {
+		_markReadTimer.cancel();
+		_markReadPending.clear();
+		return; // smthing просто потому что мне лень да
+	}
 	_markReadTimer.cancel();
 	for (auto i = begin(_markReadPending); i != end(_markReadPending);) {
 		const auto peerId = *i;
@@ -1434,6 +1440,11 @@ void Stories::sendMarkAsReadRequests() {
 }
 
 void Stories::sendIncrementViewsRequests() {
+	if (MakuGram::Settings::instance().ghostHideStoriesView()) {
+		_incrementViewsTimer.cancel();
+		_incrementViewsPending.clear();
+		return; // smthing просто потому что мне лень да
+	}
 	if (_incrementViewsPending.empty()) {
 		return;
 	}

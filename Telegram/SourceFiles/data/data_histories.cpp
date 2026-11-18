@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_histories.h"
 
+#include "makugram/makugram_settings.h"
 #include "api/api_text_entities.h"
 #include "data/business/data_shortcut_messages.h"
 #include "data/components/ephemeral_messages.h"
@@ -718,6 +719,10 @@ void Histories::reportPendingDeliveries() {
 }
 
 void Histories::sendReadRequests() {
+	if (MakuGram::Settings::instance().ghostMarkRead()) {
+		_readRequestsTimer.cancel();
+		return; // smthing просто потому что мне лень да
+	}
 	DEBUG_LOG(("Reading: send requests with count %1.").arg(_states.size()));
 	if (_states.empty()) {
 		return;
@@ -745,6 +750,9 @@ void Histories::sendReadRequests() {
 }
 
 void Histories::sendReadRequest(not_null<History*> history, State &state) {
+	if (MakuGram::Settings::instance().ghostMarkRead()) {
+		return; // smthing просто потому что мне лень да
+	}
 	Expects(state.willReadTill > state.sentReadTill);
 
 	const auto tillId = state.sentReadTill = base::take(state.willReadTill);

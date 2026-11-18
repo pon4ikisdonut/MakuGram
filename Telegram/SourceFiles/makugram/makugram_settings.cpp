@@ -133,6 +133,10 @@ Settings::Settings() {
 	_spamKeywords = s.value("spamKeywords", QString()).toString();
 	_showNewbieBadge = s.value("showNewbieBadge", false).toBool();
 	_showProfileDetails = s.value("showProfileDetails", true).toBool();
+	_ghostMode = s.value("ghostMode", false).toBool();
+	_ghostHideOnline = s.value("ghostHideOnline", false).toBool();
+	_ghostMarkRead = s.value("ghostMarkRead", false).toBool();
+	_ghostHideStoriesView = s.value("ghostHideStoriesView", false).toBool();
 	_hideTypingStatus = s.value("hideTypingStatus", false).toBool();
 	_bypassRestrictedContent = s.value("bypassRestrictedContent", false).toBool();
 	_showUnreadFilterButton = s.value("showUnreadFilterButton", true).toBool();
@@ -377,8 +381,80 @@ rpl::producer<bool> Settings::showProfileDetailsChanges() const {
 	return _showProfileDetailsChanges.events();
 }
 
+bool Settings::ghostMode() const {
+	return _ghostMode;
+}
+
+void Settings::setGhostMode(bool enabled) {
+	if (_ghostMode != enabled) {
+		_ghostMode = enabled;
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("ghostMode", enabled);
+		_ghostModeChanges.fire_copy(enabled);
+		_ghostHideOnlineChanges.fire_copy(ghostHideOnline());
+		_ghostMarkReadChanges.fire_copy(ghostMarkRead());
+		_ghostHideStoriesViewChanges.fire_copy(ghostHideStoriesView());
+		_hideTypingStatusChanges.fire_copy(hideTypingStatus());
+	}
+}
+
+rpl::producer<bool> Settings::ghostModeChanges() const {
+	return _ghostModeChanges.events();
+}
+
+bool Settings::ghostHideOnline() const {
+	return _ghostMode || _ghostHideOnline;
+}
+
+void Settings::setGhostHideOnline(bool enabled) {
+	if (_ghostHideOnline != enabled) {
+		_ghostHideOnline = enabled;
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("ghostHideOnline", enabled);
+		_ghostHideOnlineChanges.fire_copy(ghostHideOnline());
+	}
+}
+
+rpl::producer<bool> Settings::ghostHideOnlineChanges() const {
+	return _ghostHideOnlineChanges.events();
+}
+
+bool Settings::ghostMarkRead() const {
+	return _ghostMode || _ghostMarkRead;
+}
+
+void Settings::setGhostMarkRead(bool enabled) {
+	if (_ghostMarkRead != enabled) {
+		_ghostMarkRead = enabled;
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("ghostMarkRead", enabled);
+		_ghostMarkReadChanges.fire_copy(ghostMarkRead());
+	}
+}
+
+rpl::producer<bool> Settings::ghostMarkReadChanges() const {
+	return _ghostMarkReadChanges.events();
+}
+
+bool Settings::ghostHideStoriesView() const {
+	return _ghostMode || _ghostHideStoriesView;
+}
+
+void Settings::setGhostHideStoriesView(bool enabled) {
+	if (_ghostHideStoriesView != enabled) {
+		_ghostHideStoriesView = enabled;
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("ghostHideStoriesView", enabled);
+		_ghostHideStoriesViewChanges.fire_copy(ghostHideStoriesView());
+	}
+}
+
+rpl::producer<bool> Settings::ghostHideStoriesViewChanges() const {
+	return _ghostHideStoriesViewChanges.events();
+}
+
 bool Settings::hideTypingStatus() const {
-	return _hideTypingStatus;
+	return _ghostMode || _hideTypingStatus;
 }
 
 void Settings::setHideTypingStatus(bool enabled) {

@@ -806,6 +806,7 @@ void Row::paintUserpic(
 			frameSize,
 			QImage::Format_ARGB32_Premultiplied);
 		_cornerBadgeUserpic->frame.setDevicePixelRatio(ratio);
+		_cornerBadgeUserpic->frame.fill(Qt::transparent); // smthing просто потому что мне лень да
 	}
 	auto key = peer ? peer->userpicUniqueKey(userpicView()) : InMemoryKey();
 	key.first += peer ? peer->messagesTTL() : 0;

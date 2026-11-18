@@ -379,6 +379,58 @@ void ShowPrivacyBox(not_null<Window::SessionController*> controller) {
 		AddCheckboxRow(
 			box,
 			Tr::Value(
+				QString::fromUtf8("Режим призрака"),
+				u"Ghost Mode"_q),
+			MakuGram::Settings::instance().ghostMode(),
+			[=](bool checked) {
+				MakuGram::Settings::instance().setGhostMode(checked);
+			},
+			Tr::Value(
+				QString::fromUtf8("Полная невидимость: скрывает онлайн, статус набора текста и выбора стикеров, запрещает отмечать входящие сообщения и истории прочитанными."),
+				u"Complete invisibility: hides online status, typing and sticker choosing, prevents marking messages and stories as read."_q));
+
+		AddCheckboxRow(
+			box,
+			Tr::Value(
+				QString::fromUtf8("Не передавать статус «В сети»"),
+				u"Do not send online status"_q),
+			MakuGram::Settings::instance().ghostHideOnline(),
+			[=](bool checked) {
+				MakuGram::Settings::instance().setGhostHideOnline(checked);
+			},
+			Tr::Value(
+				QString::fromUtf8("Скрывает ваше присутствие в сети (для всех отображается статус «был(а) недавно»)."),
+				u"Hides your online presence (always shows 'last seen recently')."_q));
+
+		AddCheckboxRow(
+			box,
+			Tr::Value(
+				QString::fromUtf8("Не отмечать сообщения прочитанными"),
+				u"Do not mark messages as read"_q),
+			MakuGram::Settings::instance().ghostMarkRead(),
+			[=](bool checked) {
+				MakuGram::Settings::instance().setGhostMarkRead(checked);
+			},
+			Tr::Value(
+				QString::fromUtf8("Входящие сообщения остаются непрочитанными на сервере, собеседник не видит галочки о прочтении."),
+				u"Incoming messages remain unread on the server, the sender will not see read checkmarks."_q));
+
+		AddCheckboxRow(
+			box,
+			Tr::Value(
+				QString::fromUtf8("Анонимный просмотр историй"),
+				u"Anonymous story viewing"_q),
+			MakuGram::Settings::instance().ghostHideStoriesView(),
+			[=](bool checked) {
+				MakuGram::Settings::instance().setGhostHideStoriesView(checked);
+			},
+			Tr::Value(
+				QString::fromUtf8("Просматривайте истории без отметки и без попадания в список просмотревших."),
+				u"View stories without marking them as viewed and without appearing in viewers list."_q));
+
+		AddCheckboxRow(
+			box,
+			Tr::Value(
 				QString::fromUtf8("Не передавать статус набора текста"),
 				u"Do not send typing status"_q),
 			MakuGram::Settings::instance().hideTypingStatus(),
@@ -860,7 +912,7 @@ void BuildMakuGramSection(SectionBuilder &builder) {
 		.title = Tr::Value(QString::fromUtf8("Приватность и безопасность"), u"Privacy & Security"_q),
 		.icon = { &st::menuIconLock },
 		.onClick = [=] { ShowPrivacyBox(controller); },
-		.keywords = { u"privacy"_q, u"typing"_q, u"copy"_q, u"delete"_q, u"phone"_q, u"blocked"_q, u"приватность"_q, u"тайпинг"_q, u"копирование"_q, u"удаление"_q, u"телефон"_q, u"номер"_q, u"блок"_q },
+		.keywords = { u"privacy"_q, u"ghost"_q, u"offline"_q, u"typing"_q, u"copy"_q, u"delete"_q, u"phone"_q, u"blocked"_q, u"приватность"_q, u"призрак"_q, u"невидимка"_q, u"офлайн"_q, u"тайпинг"_q, u"копирование"_q, u"удаление"_q, u"телефон"_q, u"номер"_q, u"блок"_q },
 	});
 
 	builder.addButton({
