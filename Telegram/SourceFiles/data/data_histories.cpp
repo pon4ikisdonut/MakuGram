@@ -719,9 +719,10 @@ void Histories::reportPendingDeliveries() {
 }
 
 void Histories::sendReadRequests() {
+	// рубим пакетную отправку прочитанных сообщений чтобы на сервере не появлялась вторая галочка просто потому что мне лень палить что я всё прочитал да
 	if (MakuGram::Settings::instance().ghostMarkRead()) {
 		_readRequestsTimer.cancel();
-		return; // smthing просто потому что мне лень да
+		return;
 	}
 	DEBUG_LOG(("Reading: send requests with count %1.").arg(_states.size()));
 	if (_states.empty()) {
@@ -750,8 +751,9 @@ void Histories::sendReadRequests() {
 }
 
 void Histories::sendReadRequest(not_null<History*> history, State &state) {
+	// отменяем конкретный запрос на прочтение диалога в режиме призрака просто потому что мне лень светить прочтение да
 	if (MakuGram::Settings::instance().ghostMarkRead()) {
-		return; // smthing просто потому что мне лень да
+		return;
 	}
 	Expects(state.willReadTill > state.sentReadTill);
 
@@ -1204,14 +1206,31 @@ int Histories::sendPreparedMessage(
 				api->applyUpdates(result, randomId);
 				done(result, response);
 				finish();
+				// сразу после успешного ответа сервера гасим статус в офлайн чтобы не оставлять активный онлайн просто потому что мне лень светиться да
+				if (MakuGram::Settings::instance().ghostHideOnline()) {
+					api->request(MTPaccount_UpdateStatus(
+						MTP_bool(true)
+					)).send();
+				}
 			}).fail([=](
 					const MTP::Error &error,
 					const MTP::Response &response) {
 				fail(error, response);
 				finish();
+				if (MakuGram::Settings::instance().ghostHideOnline()) {
+					api->request(MTPaccount_UpdateStatus(
+						MTP_bool(true)
+					)).send();
+				}
 			}).afterRequest(
 				history->sendRequestId
 			).send();
+			// сразу при отправке пакета шлем офлайн чтобы перебить серверный статус активности если сообщение уходит прямо сейчас просто потому что мне лень палиться да
+			if (MakuGram::Settings::instance().ghostHideOnline()) {
+				api->request(MTPaccount_UpdateStatus(
+					MTP_bool(true)
+				)).send();
+			}
 			return history->sendRequestId;
 		});
 	});

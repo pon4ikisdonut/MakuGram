@@ -1008,8 +1008,9 @@ void Updates::updateOnline(crl::time lastNonIdleTime, bool gotOtherOffline) {
 
 	const auto &config = _session->serverConfig();
 	bool isOnline = Core::App().hasActiveWindow(&session());
+	// форсим офлайн статус чтобы клиент никогда не отправлял на сервер что мы в сети просто потому что мне лень обновлять онлайн да
 	if (MakuGram::Settings::instance().ghostHideOnline()) {
-		isOnline = false; // smthing просто потому что мне лень да
+		isOnline = false;
 	}
 	int updateIn = config.onlineUpdatePeriod;
 	Assert(updateIn >= 0);

@@ -65,6 +65,7 @@ void SendProgressManager::update(
 		MsgId topMsgId,
 		SendProgressType type,
 		int progress) {
+	// рубим отправку статуса набора текста и выбора стикеров если включен стелс просто потому что мне лень палить что я печатаю да
 	if (MakuGram::Settings::instance().hideTypingStatus()) {
 		if (type != SendProgressType::Speaking) {
 			return;
