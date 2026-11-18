@@ -19,6 +19,8 @@ jobs:
 
     env:
       PREPARE_PATH: Telegram/build/prepare/prepare.py
+      PreferredToolArchitecture: x64
+      _CL_: /Zm200
 
     defaults:
       run:
@@ -34,6 +36,18 @@ jobs:
           Remove-Item -Recurse -Force 'C:\hostedtoolcache\windows\go' -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force 'C:\hostedtoolcache\windows\Ruby' -ErrorAction SilentlyContinue
           Get-PSDrive C, D
+
+      - name: Configure Pagefile on D drive
+        shell: pwsh
+        run: |
+          try {
+            Write-Host "Configuring pagefile on D:..."
+            Set-CimInstance -Query "Select * from Win32_ComputerSystem" -Property @{AutomaticManagedPagefile = $False}
+            New-CimInstance -ClassName Win32_PageFileSetting -Property @{Name = "D:\pagefile.sys"; InitialSize = 8192; MaximumSize = 16384}
+            Write-Host "Pagefile on D: successfully configured."
+          } catch {
+            Write-Warning "Could not configure pagefile: $_"
+          }
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -199,12 +213,13 @@ jobs:
           cd %TBUILD%\%REPO_NAME%\Telegram
           call configure.bat ^
             x64 ^
+            -T host=x64 ^
             -D TDESKTOP_API_ID=${{ vars.TDESKTOP_API_ID || '611335' }} ^
             -D TDESKTOP_API_HASH=${{ secrets.TDESKTOP_API_HASH || 'd524b414d21f4d37f08684c1df41ac9c' }} ^
             -D CMAKE_CONFIGURATION_TYPES=Release ^
             -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
             -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
-          cmake --build ..\out --config Release --parallel
+          cmake --build ..\out --config Release --parallel 2 -- /p:PreferredToolArchitecture=x64
 
       - name: Package artifact
         shell: pwsh
@@ -253,7 +268,7 @@ jobs:
       - name: Free up disk space
         uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6
         with:
-          tool-cache: true
+          preinstalled-runtimes: true
 
       - name: Set up Docker Buildx
         id: setup-buildx

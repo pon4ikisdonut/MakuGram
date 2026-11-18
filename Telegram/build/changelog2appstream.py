@@ -2,8 +2,13 @@
 
 import re
 import datetime
-from xml.etree import ElementTree as ET
 import argparse
+
+try:
+    from xml.etree import ElementTree as ET
+    have_et = True
+except (ImportError, Exception):
+    have_et = False
 
 def parse_changelog(changelog_path):
     version_re = re.compile(r'([\d.-]+)\s+(\w+)?\s*\((\d{2}.\d{2}\.\d{2})\)')
@@ -53,15 +58,51 @@ def get_changelog_xml(changelog, max_items=None):
     return releases
 
 def update_metadata(metadata_path, changelog, max_items=None):
-    metadata = ET.parse(metadata_path)
-    root = metadata.getroot()
-    releases = root.find("releases")
-    if releases is not None:
-        root.remove(releases)
-    root.append(
-        get_changelog_xml(changelog, max_items)
-    )
-    metadata.write(metadata_path, encoding="utf-8", xml_declaration=True)
+    if have_et:
+        try:
+            metadata = ET.parse(metadata_path)
+            root = metadata.getroot()
+            releases = root.find("releases")
+            if releases is not None:
+                root.remove(releases)
+            root.append(
+                get_changelog_xml(changelog, max_items)
+            )
+            metadata.write(metadata_path, encoding="utf-8", xml_declaration=True)
+            return
+        except Exception:
+            pass
+
+    # Fallback without pyexpat
+    with open(metadata_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    if max_items is not None:
+        changelog = changelog[:max_items]
+
+    releases_xml = ['  <releases>']
+    for version, prerelease, date, changes in changelog:
+        ver_str = version if prerelease is None else f"{version}~{prerelease}"
+        date_str = date.isoformat()
+        releases_xml.append(f'    <release version="{ver_str}" date="{date_str}">')
+        releases_xml.append('      <description>')
+        releases_xml.append('        <ul>')
+        for c in changes:
+            esc_c = c.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            releases_xml.append(f'          <li>{esc_c}</li>')
+        releases_xml.append('        </ul>')
+        releases_xml.append('      </description>')
+        releases_xml.append('    </release>')
+    releases_xml.append('  </releases>')
+    releases_str = '\n'.join(releases_xml)
+
+    if '<releases>' in content and '</releases>' in content:
+        content = re.sub(r'<releases>.*?</releases>', releases_str, content, flags=re.DOTALL)
+    elif '</component>' in content:
+        content = content.replace('</component>', f'{releases_str}\n</component>')
+
+    with open(metadata_path, 'w', encoding='utf-8') as f:
+        f.write(content)
 
 def main():
     ap = argparse.ArgumentParser("Parse Telegram changelog")
