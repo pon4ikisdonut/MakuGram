@@ -1463,7 +1463,7 @@ void ApiWrap::migrateFail(not_null<PeerData*> peer, const QString &error) {
 
 void ApiWrap::markContentsRead(
 		const base::flat_set<not_null<HistoryItem*>> &items) {
-	// глушим отправку отметки о прослушивании голосовых и просмотре медиа чтобы они оставались непросмотренными просто потому что мне лень палиться да
+	// не отправляем отметку о прослушивании голосовых сообщений и просмотре медиа
 	if (MakuGram::Settings::instance().ghostMarkRead()) {
 		return;
 	}
@@ -1498,7 +1498,7 @@ void ApiWrap::markContentsRead(
 }
 
 void ApiWrap::markContentsRead(not_null<HistoryItem*> item) {
-	// не отправляем на сервер факт открытия кружка или голосового сообщения просто потому что мне лень давать им знать да
+	// блокируем отправку факта открытия кружка или голосового сообщения
 	if (MakuGram::Settings::instance().ghostMarkRead()) {
 		return;
 	}

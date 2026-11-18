@@ -719,7 +719,7 @@ void Histories::reportPendingDeliveries() {
 }
 
 void Histories::sendReadRequests() {
-	// рубим пакетную отправку прочитанных сообщений чтобы на сервере не появлялась вторая галочка просто потому что мне лень палить что я всё прочитал да
+	// блокируем отправку запросов на прочтение, чтобы сообщения оставались непрочитанными на сервере
 	if (MakuGram::Settings::instance().ghostMarkRead()) {
 		_readRequestsTimer.cancel();
 		return;
@@ -751,7 +751,7 @@ void Histories::sendReadRequests() {
 }
 
 void Histories::sendReadRequest(not_null<History*> history, State &state) {
-	// отменяем конкретный запрос на прочтение диалога в режиме призрака просто потому что мне лень светить прочтение да
+	// отменяем отправку отметки о прочтении диалога
 	if (MakuGram::Settings::instance().ghostMarkRead()) {
 		return;
 	}
@@ -1206,7 +1206,7 @@ int Histories::sendPreparedMessage(
 				api->applyUpdates(result, randomId);
 				done(result, response);
 				finish();
-				// сразу после успешного ответа сервера гасим статус в офлайн чтобы не оставлять активный онлайн просто потому что мне лень светиться да
+				// принудительно возвращаем статус офлайн после отправки, чтобы сбить серверный триггер активности
 				if (MakuGram::Settings::instance().ghostHideOnline()) {
 					api->request(MTPaccount_UpdateStatus(
 						MTP_bool(true)
@@ -1225,7 +1225,7 @@ int Histories::sendPreparedMessage(
 			}).afterRequest(
 				history->sendRequestId
 			).send();
-			// сразу при отправке пакета шлем офлайн чтобы перебить серверный статус активности если сообщение уходит прямо сейчас просто потому что мне лень палиться да
+			// сбиваем статус активности в момент отправки сообщения
 			if (MakuGram::Settings::instance().ghostHideOnline()) {
 				api->request(MTPaccount_UpdateStatus(
 					MTP_bool(true)

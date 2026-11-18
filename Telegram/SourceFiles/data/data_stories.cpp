@@ -1419,7 +1419,7 @@ void Stories::checkQuitPreventFinished() {
 }
 
 void Stories::sendMarkAsReadRequests() {
-	// блокируем отправку отметки о прочтении историй чтобы автор не видел нас в списке просмотревших просто потому что мне лень палить просмотр сторис да
+	// блокируем отправку отметки о прочтении историй
 	if (MakuGram::Settings::instance().ghostHideStoriesView()) {
 		_markReadTimer.cancel();
 		_markReadPending.clear();
@@ -1441,7 +1441,7 @@ void Stories::sendMarkAsReadRequests() {
 }
 
 void Stories::sendIncrementViewsRequests() {
-	// не инкрементируем счетчик просмотров историй в режиме призрака чтобы оставаться анонимным просто потому что мне лень светиться в зрителях да
+	// не инкрементируем счетчик просмотров историй для сохранения анонимности
 	if (MakuGram::Settings::instance().ghostHideStoriesView()) {
 		_incrementViewsTimer.cancel();
 		_incrementViewsPending.clear();
