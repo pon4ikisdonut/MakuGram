@@ -9,7 +9,7 @@ permissions:
 
 concurrency:
   group: makugram-build-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   windows:
@@ -20,7 +20,6 @@ jobs:
     env:
       PREPARE_PATH: Telegram/build/prepare/prepare.py
       PreferredToolArchitecture: x64
-      _CL_: /Zm200
 
     defaults:
       run:
@@ -30,24 +29,21 @@ jobs:
       - name: "Free disk space on C drive"
         shell: pwsh
         run: |
-          Write-Host "Freeing disk space on C:..."
-          Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Android\Sdk" -ErrorAction SilentlyContinue
-          Remove-Item -Recurse -Force 'C:\hostedtoolcache\windows\Java*' -ErrorAction SilentlyContinue
-          Remove-Item -Recurse -Force 'C:\hostedtoolcache\windows\go' -ErrorAction SilentlyContinue
-          Remove-Item -Recurse -Force 'C:\hostedtoolcache\windows\Ruby' -ErrorAction SilentlyContinue
+          $before = (Get-PSDrive C).Free / 1GB
+          Get-Service docker -ErrorAction SilentlyContinue | Stop-Service -ErrorAction SilentlyContinue
+          wsl --shutdown 2> $null
+          Remove-Item "C:\Android\android-sdk", "$env:LOCALAPPDATA\Android\Sdk", "C:\Program Files\dotnet", "C:\Miniconda", "C:\msys64", "$env:USERPROFILE\.cargo", "$env:USERPROFILE\.rustup", "$env:LOCALAPPDATA\Docker", "C:\ProgramData\DockerDesktop", "C:\Program Files\PostgreSQL", "C:\PostgreSQL", "C:\Program Files\MongoDB", "C:\Program Files\MySQL" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\ghcup", "C:\cabal", "C:\Program Files\LLVM", "C:\vcpkg", "C:\tools\kotlinc", "C:\tools\php", "C:\tools\Apache24", "C:\tools\nginx-*", "C:\selenium", "C:\SeleniumWebDrivers", "C:\Program Files\R", "C:\Program Files (x86)\R", "C:\rtools*", "C:\ProgramData\Package Cache" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item C:\hostedtoolcache\windows\Go*, C:\hostedtoolcache\windows\Ruby*, C:\hostedtoolcache\windows\PyPy*, C:\hostedtoolcache\windows\Java_*, C:\hostedtoolcache\windows\NuGet* -Recurse -Force -ErrorAction SilentlyContinue
+          Write-Host ('{0:N1} GB -> {1:N1} GB free' -f $before, ((Get-PSDrive C).Free / 1GB))
           Get-PSDrive C, D
 
-      - name: Configure Pagefile on D drive
-        shell: pwsh
-        run: |
-          try {
-            Write-Host "Configuring pagefile on D:..."
-            Set-CimInstance -Query "Select * from Win32_ComputerSystem" -Property @{AutomaticManagedPagefile = $False}
-            New-CimInstance -ClassName Win32_PageFileSetting -Property @{Name = "D:\pagefile.sys"; InitialSize = 8192; MaximumSize = 16384}
-            Write-Host "Pagefile on D: successfully configured."
-          } catch {
-            Write-Warning "Could not configure pagefile: $_"
-          }
+      - name: Configure Pagefile
+        uses: al-cheb/configure-pagefile-action@v1.5
+        with:
+          minimum-size: 16GB
+          maximum-size: 32GB
+          disk-root: "D:"
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -216,6 +212,7 @@ jobs:
             -D TDESKTOP_API_ID=${{ vars.TDESKTOP_API_ID || '611335' }} ^
             -D TDESKTOP_API_HASH=${{ secrets.TDESKTOP_API_HASH || 'd524b414d21f4d37f08684c1df41ac9c' }} ^
             -D CMAKE_CONFIGURATION_TYPES=Release ^
+            -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= ^
             -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
             -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
           cmake --build ..\out --config Release --parallel 2 -- /p:PreferredToolArchitecture=x64
