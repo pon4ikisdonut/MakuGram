@@ -326,7 +326,7 @@ RequestsBoxController::RowHelper::RowHelper(bool isGroup)
 , _banRectOver(
 	st::requestsAcceptButton.height / 2,
 	BanButtonBgOver())
-, _acceptText(tr::lng_group_requests_add(tr::now))
+, _acceptText(MakuGram::Tr::Get(QString::fromUtf8("Принять"), u"Accept"_q))
 , _rejectText(tr::lng_group_requests_dismiss(tr::now))
 , _banText(tr::lng_makugram_ban_button(tr::now))
 , _acceptTextWidth(st::requestsAcceptButton.style.font->width(_acceptText))
@@ -438,6 +438,9 @@ void RequestsBoxController::prepare() {
 }
 
 void RequestsBoxController::setupMassActions() {
+	if (!MakuGram::Settings::instance().massJoinRequests()) {
+		return;
+	}
 	auto container = object_ptr<Ui::RpWidget>::fromRaw(new Ui::RpWidget(nullptr));
 	const auto raw = container.data();
 	_massActions = raw;
@@ -446,11 +449,11 @@ void RequestsBoxController::setupMassActions() {
 
 	const auto acceptAll = Ui::CreateChild<Ui::RoundButton>(
 		raw,
-		MakuGram::Tr::Value(QString::fromUtf8("Принять всех"), u"Approve All"_q),
+		MakuGram::Tr::Value(QString::fromUtf8("Принять всех"), u"Accept all"_q),
 		st::requestsAddAllButton);
 	const auto rejectAll = Ui::CreateChild<Ui::RoundButton>(
 		raw,
-		MakuGram::Tr::Value(QString::fromUtf8("Отклонить всех"), u"Dismiss All"_q),
+		MakuGram::Tr::Value(QString::fromUtf8("Отклонить всех"), u"Dismiss all"_q),
 		st::requestsDeclineAllButton);
 	acceptAll->setFullRadius(true);
 	rejectAll->setFullRadius(true);

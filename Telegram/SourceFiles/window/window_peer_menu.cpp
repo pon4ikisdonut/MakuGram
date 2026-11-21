@@ -62,6 +62,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/layers/generic_box.h"
 #include "ui/boxes/single_choice_box.h"
 #include "makugram/makugram_settings.h"
+#include "makugram/makugram_lang.h"
 #include "ui/delayed_activation.h"
 #include "ui/vertical_list.h"
 #include "ui/controls/feature_list.h"
@@ -87,6 +88,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_schedule_box.h"
 #include "iv/editor/iv_editor_session.h"
 #include "wallet/wallet_panel.h"
+#include "window/window_columns.h"
 #include "window/window_separate_id.h"
 #include "window/window_session_controller.h"
 #include "window/window_controller.h"
@@ -103,6 +105,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/info_profile_values.h"
 #include "info/statistics/info_statistics_widget.h"
 #include "info/stories/info_stories_widget.h"
+#include "media/stories/media_stories_post.h"
+#include "boxes/story_drafts_box.h"
 #include "data/components/scheduled_messages.h"
 #include "data/components/welcome_messages.h"
 #include "data/notify/data_notify_settings.h"
@@ -298,12 +302,8 @@ void ExecuteDeleteIds(
 		if (*offset >= ids->size()) {
 			session->data().sendHistoryChangeNotifications();
 			controller->showToast(onlyMedia
-				? MakuGram::Tr::Get(
-					QString::fromUtf8("Удалено медиа: %1").arg(totalCount),
-					QString::fromUtf8("Media deleted: %1").arg(totalCount))
-				: MakuGram::Tr::Get(
-					QString::fromUtf8("Удалено сообщений: %1").arg(totalCount),
-					QString::fromUtf8("Messages deleted: %1").arg(totalCount)));
+				? MakuGram::Tr::Get(QString::fromUtf8("Удалено медиа: %1").arg(totalCount), u"Media deleted: %1"_q.arg(totalCount))
+				: MakuGram::Tr::Get(QString::fromUtf8("Удалено сообщений: %1").arg(totalCount), u"Messages deleted: %1"_q.arg(totalCount)));
 			return;
 		}
 		const auto chunkSize = std::min(100, int(ids->size() - *offset));
@@ -445,24 +445,16 @@ void DeleteOwnMessagesByDates(
 				(*searchNext)(lastId);
 			} else if (allIds->isEmpty()) {
 				controller->showToast(onlyMedia
-					? MakuGram::Tr::Get(
-						QString::fromUtf8("Медиа за выбранный период не найдено"),
-						u"No media found for selected period"_q)
-					: MakuGram::Tr::Get(
-						QString::fromUtf8("Сообщений за выбранный период не найдено"),
-						u"No messages found for selected period"_q));
+					? MakuGram::Tr::Get(QString::fromUtf8("Медиа за выбранный период не найдено"), u"No media found for the selected period"_q)
+					: MakuGram::Tr::Get(QString::fromUtf8("Сообщений за выбранный период не найдено"), u"No messages found for the selected period"_q));
 			} else {
 				const auto count = allIds->size();
 				const auto title = onlyMedia
-					? MakuGram::Tr::Get(QString::fromUtf8("Удаление медиа"), u"Delete media"_q)
-					: MakuGram::Tr::Get(QString::fromUtf8("Удаление сообщений"), u"Delete messages"_q);
+					? MakuGram::Tr::Get(QString::fromUtf8("Удаление медиа"), u"Delete Media"_q)
+					: MakuGram::Tr::Get(QString::fromUtf8("Удаление сообщений"), u"Delete Messages"_q);
 				const auto text = onlyMedia
-					? MakuGram::Tr::Get(
-						QString::fromUtf8("Найдено медиа: %1 %2.\n\nВы уверены, что хотите удалить их?").arg(count).arg(periodText),
-						QString::fromUtf8("Found media: %1 %2.\n\nAre you sure you want to delete them?").arg(count).arg(periodText))
-					: MakuGram::Tr::Get(
-						QString::fromUtf8("Найдено сообщений: %1 %2.\n\nВы уверены, что хотите удалить их?").arg(count).arg(periodText),
-						QString::fromUtf8("Found messages: %1 %2.\n\nAre you sure you want to delete them?").arg(count).arg(periodText));
+					? MakuGram::Tr::Get(QString::fromUtf8("Найдено медиа: %1 %2.\n\nВы уверены, что хотите удалить их?").arg(count).arg(periodText), u"Found media: %1 %2.\n\nAre you sure you want to delete them?"_q.arg(count).arg(periodText))
+					: MakuGram::Tr::Get(QString::fromUtf8("Найдено сообщений: %1 %2.\n\nВы уверены, что хотите удалить их?").arg(count).arg(periodText), u"Found messages: %1 %2.\n\nAre you sure you want to delete them?"_q.arg(count).arg(periodText));
 
 				controller->show(Ui::MakeConfirmBox({
 					.text = text,
@@ -511,6 +503,8 @@ private:
 	void addToggleMuteSubmenu(bool addSeparator);
 	void addSupportInfo();
 	void addInfo();
+	void addPostStory();
+	void addStoryDrafts();
 	void addStoryArchive();
 	void addNewWindow(bool addSeparator = true);
 	void addUngroup();
@@ -829,8 +823,8 @@ void Filler::addInfo() {
 	} else if (_controller->adaptive().isThreeColumn()) {
 		const auto thread = _controller->activeChatCurrent().thread();
 		if (thread && !thread->asSublist() && thread == _thread) {
-			if (Core::App().settings().thirdSectionInfoEnabled()
-				|| Core::App().settings().tabbedReplacedWithInfo()) {
+			if (_controller->columns().thirdSectionInfoEnabled()
+				|| _controller->columns().tabbedReplacedWithInfo()) {
 				return;
 			}
 		}
@@ -859,6 +853,30 @@ void Filler::addInfo() {
 			}
 		}
 	}, infoPeer->isUser() ? &st::menuIconProfile : &st::menuIconInfo);
+}
+
+void Filler::addPostStory() {
+	if (!_peer
+		|| _topic
+		|| _sublist
+		|| !Media::Stories::CanPostStory(_peer)) {
+		return;
+	}
+	const auto controller = _controller;
+	const auto peer = _peer;
+	_addAction(tr::lng_story_post_button(tr::now), [=] {
+		Media::Stories::PostStory(controller, peer);
+	}, &st::menuIconStoryPost);
+}
+
+void Filler::addStoryDrafts() {
+	if (!_peer || _topic || _sublist || !_peer->isSelf()) {
+		return;
+	}
+	const auto controller = _controller;
+	_addAction(tr::lng_story_drafts_button(tr::now), [=] {
+		ShowStoryDraftsBox(controller);
+	}, &st::menuIconStoriesSavedSection);
 }
 
 void Filler::addStoryArchive() {
@@ -1097,7 +1115,7 @@ void Filler::addMassDeleteMyMessages() {
 		}
 	}
 	_addAction(
-		MakuGram::Tr::Get(QString::fromUtf8("Удалить свои соо. за период..."), u"Delete own messages for period..."_q),
+		MakuGram::Tr::Get(QString::fromUtf8("Удалить свои соо. за период..."), u"Delete messages by period..."_q),
 		[controller = _controller, peer = _peer] {
 			const auto options = std::vector<QString>{
 				MakuGram::Tr::Get(QString::fromUtf8("За сегодня"), u"Today"_q),
@@ -1106,7 +1124,7 @@ void Filler::addMassDeleteMyMessages() {
 				MakuGram::Tr::Get(QString::fromUtf8("За всё время"), u"All time"_q),
 			};
 			controller->show(Box([=](not_null<Ui::GenericBox*> box) {
-				box->setTitle(rpl::single(MakuGram::Tr::Get(QString::fromUtf8("Удаление сообщений за период"), u"Delete messages for period"_q)));
+				box->setTitle(MakuGram::Tr::Value(QString::fromUtf8("Удаление сообщений за период"), u"Delete messages by period"_q));
 				box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
 
 				const auto group = std::make_shared<Ui::RadiobuttonGroup>(-1);
@@ -1140,7 +1158,7 @@ void Filler::addMassDeleteMyMessages() {
 				const auto onlyMediaCheck = layout->add(
 					object_ptr<Ui::Checkbox>(
 						layout,
-						MakuGram::Tr::Get(QString::fromUtf8("Удалить только медиа"), u"Delete media only"_q),
+						MakuGram::Tr::Get(QString::fromUtf8("Удалить только медиа"), u"Delete only media"_q),
 						false,
 						st::defaultBoxCheckbox),
 					QMargins(
@@ -2258,6 +2276,8 @@ void Filler::fillHistoryActions() {
 	addInfo();
 	addViewAsTopics();
 	addManageChat();
+	addPostStory();
+	addStoryDrafts();
 	addStoryArchive();
 	addSupportInfo();
 	addBoostChat();
@@ -2287,6 +2307,8 @@ void Filler::fillProfileActions() {
 	addSendGift();
 	addSendMoney();
 	addViewStatistics();
+	addPostStory();
+	addStoryDrafts();
 	addStoryArchive();
 	addManageChat();
 	addSetPersonalChannel();
@@ -3112,6 +3134,8 @@ void PeerMenuBlockUserBox(
 		: nullptr;
 
 	if (allFromUser) {
+		// A long name wraps the label instead of cutting it.
+		allFromUser->setAllowTextLines();
 		box->addSkip(st::boxLittleSkip);
 	}
 

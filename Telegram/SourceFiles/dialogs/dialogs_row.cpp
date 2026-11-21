@@ -754,11 +754,13 @@ void Row::paintUserpic(
 		? ((peer->isUser() || peer->isChannel()) ? peer : nullptr)
 		: nullptr;
 	const auto storiesFolder = peer ? nullptr : _id.folder();
-	const auto storiesHas = !MakuGram::Settings::instance().disableStories() && (storiesPeer
-		? storiesPeer->hasActiveStories()
-		: storiesFolder
-		? (storiesFolder->storiesCount() > 0)
-		: false);
+	const auto storiesHas = !compact
+		&& !MakuGram::Settings::instance().disableStories()
+		&& (storiesPeer
+			? storiesPeer->hasActiveStories()
+			: storiesFolder
+			? (storiesFolder->storiesCount() > 0)
+			: false);
 	if (!cornerBadgeShown && !storiesHas) {
 		BasicRow::paintUserpic(p, entry, peer, videoUserpic, context, false);
 		if (!peer || !_cornerBadgeShown) {
@@ -800,8 +802,8 @@ void Row::paintUserpic(
 	const auto limit = Ui::kOutlineSegmentsMax;
 	const auto storiesCount = std::min(storiesCountReal, limit);
 	const auto storiesUnreadCount = std::min(storiesUnreadCountReal, limit);
-	const auto frameSizeChanged = (_cornerBadgeUserpic->frame.size() != frameSize);
-	if (frameSizeChanged) {
+	const auto frameReallocated = (_cornerBadgeUserpic->frame.size() != frameSize);
+	if (frameReallocated) {
 		_cornerBadgeUserpic->frame = QImage(
 			frameSize,
 			QImage::Format_ARGB32_Premultiplied);
@@ -817,7 +819,7 @@ void Row::paintUserpic(
 	const auto active = context.active ? 1 : 0;
 	const auto keyChanged = (_cornerBadgeUserpic->key != key)
 		|| (_cornerBadgeUserpic->paletteVersion != paletteVersion);
-	if (keyChanged || frameSizeChanged) {
+	if (keyChanged || frameReallocated) {
 		_cornerBadgeUserpic->cacheTTL = QImage();
 		_cornerBadgeUserpic->cacheHidden = QImage();
 	}
@@ -835,8 +837,8 @@ void Row::paintUserpic(
 	// Only stories outline and online badge differ for active row.
 	const auto activeMatters = storiesCount
 		|| !(subscribed || communityMember);
-	if (frameSizeChanged
-		|| keyChanged
+	if (keyChanged
+		|| frameReallocated
 		|| !_cornerBadgeUserpic->layersManager.isFinished()
 		|| (activeMatters && _cornerBadgeUserpic->active != active)
 		|| _cornerBadgeUserpic->hidden != (hidden ? 1 : 0)

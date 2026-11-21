@@ -1757,6 +1757,7 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 			} else {
 				owner.histories().checkTopicCreated(id, newId);
 			}
+			owner.histories().checkReplyTargetSent(id, newId);
 			session().data().unregisterMessageRandomId(randomId);
 		} else {
 			Core::App().calls().handleUpdate(&session(), update);
@@ -2371,6 +2372,7 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 		}
 	} break;
 
+	case mtpc_updateNewBotConnection:
 	case mtpc_updateNewAuthorization: {
 		session().api().authorizations().apply(update);
 	} break;

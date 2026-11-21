@@ -295,15 +295,15 @@ bool UserpicButton::hasPersonalPhotoLocally() const {
 }
 
 void UserpicButton::setClickHandlerByRole() {
-	requestSuggestAvailability();
-
 	switch (_role) {
 	case Role::ChoosePhoto:
 	case Role::ChangePhoto:
+		requestSuggestAvailability();
 		addClickHandler([=] { choosePhotoLocally(); });
 		break;
 
 	case Role::OpenPhoto:
+		requestSuggestAvailability();
 		addClickHandler([=] { openPeerPhoto(); });
 		break;
 	}
@@ -1292,6 +1292,9 @@ void UserpicButton::prepareUserpicPixmap() {
 							Images::CornersMask(size
 								* Ui::ForumUserpicRadiusMultiplier()))
 						: Images::Circle(std::move(image));
+					if (MakuGram::Settings::instance().streamerMode()) {
+						MakuGram::BlurImageStrong(image);
+					}
 					image.setDevicePixelRatio(style::DevicePixelRatio());
 					p.drawImage(0, 0, image);
 				}
