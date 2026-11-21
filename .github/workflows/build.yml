@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: makugram-build-${{ github.ref }}
@@ -214,7 +214,8 @@ jobs:
             -D CMAKE_CONFIGURATION_TYPES=Release ^
             -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= ^
             -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
-            -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+            -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON ^
+            -D MAKUGRAM_BUILD_NUMBER=${{ github.run_number }}
           cmake --build ..\out --config Release --parallel 2 -- /p:PreferredToolArchitecture=x64
 
       - name: Package artifact
@@ -229,7 +230,7 @@ jobs:
             Copy-Item $modules (Join-Path $stage "modules") -Recurse
           }
           New-Item -ItemType Directory -Force -Path "artifact" | Out-Null
-          Compress-Archive -Path "$stage\*" -DestinationPath "artifact\MakuGram-win-x64.zip" -Force
+          Compress-Archive -Path "$stage\*" -DestinationPath "artifact\MakuGramR-win-x64.zip" -Force
 
           # Locate or install Inno Setup compiler (ISCC)
           $iscc = (Get-Command iscc.exe -ErrorAction SilentlyContinue)?.Source
@@ -258,15 +259,15 @@ jobs:
           }
           Write-Host "Compiling Inno Setup installer for version $appVersion with $iscc..."
           $issFile = "$env:TBUILD\$env:REPO_NAME\Telegram\build\setup.iss"
-          & $iscc "/dMyAppVersion=$appVersion" "/dMyAppVersionZero=$appVersion" "/dMyAppVersionFull=$appVersion" "/dReleasePath=$out" "/dMyBuildTarget=win64" "/dMyOutputBaseFilename=MakuGram-Setup-x64" $issFile
+          & $iscc "/dMyAppVersion=$appVersion" "/dMyAppVersionZero=$appVersion" "/dMyAppVersionFull=$appVersion" "/dReleasePath=$out" "/dMyBuildTarget=win64" "/dMyOutputBaseFilename=MakuGramR-Setup-x64" $issFile
           if ($LASTEXITCODE -ne 0) {
             throw "ISCC failed with exit code $LASTEXITCODE"
           }
 
-          $installer = Join-Path $out "MakuGram-Setup-x64.exe"
+          $installer = Join-Path $out "MakuGramR-Setup-x64.exe"
           if (Test-Path $installer) {
-            Copy-Item $installer "artifact\MakuGram-Setup-x64.exe" -Force
-            Write-Host "Installer created: artifact\MakuGram-Setup-x64.exe"
+            Copy-Item $installer "artifact\MakuGramR-Setup-x64.exe" -Force
+            Write-Host "Installer created: artifact\MakuGramR-Setup-x64.exe"
           } else {
             throw "Installer not found at $installer"
           }
@@ -274,15 +275,15 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: MakuGram-win-x64
+          name: MakuGramR-win-x64
           path: artifact/*
           retention-days: 30
 
       - name: Upload installer
         uses: actions/upload-artifact@v7
         with:
-          name: MakuGram-Setup-x64
-          path: artifact/MakuGram-Setup-x64.exe
+          name: MakuGramR-Setup-x64
+          path: artifact/MakuGramR-Setup-x64.exe
           retention-days: 30
 
   linux:
@@ -373,20 +374,21 @@ jobs:
             -D TDESKTOP_API_HASH=${{ secrets.TDESKTOP_API_HASH || 'd524b414d21f4d37f08684c1df41ac9c' }} \
             -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \
             -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON \
-            -D DESKTOP_APP_ENABLE_LTO=OFF
+            -D DESKTOP_APP_ENABLE_LTO=OFF \
+            -D MAKUGRAM_BUILD_NUMBER=${{ github.run_number }}
 
       - name: Package artifact
         run: |
           test -f out/Release/Telegram
           strip -s out/Release/Telegram || true
           mkdir -p artifact
-          tar -cJf artifact/MakuGram-linux-x64.tar.xz -C out/Release Telegram
+          tar -cJf artifact/MakuGramR-linux-x64.tar.xz -C out/Release Telegram
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: MakuGram-linux-x64
-          path: artifact/MakuGram-linux-x64.tar.xz
+          name: MakuGramR-linux-x64
+          path: artifact/MakuGramR-linux-x64.tar.xz
           retention-days: 30
 
   macos:
@@ -584,7 +586,8 @@ jobs:
             -DTDESKTOP_API_ID=${{ vars.TDESKTOP_API_ID || '611335' }} \
             -DTDESKTOP_API_HASH=${{ secrets.TDESKTOP_API_HASH || 'd524b414d21f4d37f08684c1df41ac9c' }} \
             -DDESKTOP_APP_DISABLE_AUTOUPDATE=ON \
-            -DDESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+            -DDESKTOP_APP_DISABLE_CRASH_REPORTS=ON \
+            -DMAKUGRAM_BUILD_NUMBER=${{ github.run_number }}
           cmake --build build --parallel
           macdeployqt build/Telegram.app
           codesign --remove-signature build/Telegram.app
@@ -592,11 +595,53 @@ jobs:
       - name: Package artifact
         run: |
           mkdir -p artifact
-          ditto -c -k --keepParent "$REPO_NAME/build/Telegram.app" "artifact/MakuGram-macos-${{ matrix.arch }}.zip"
+          ditto -c -k --keepParent "$REPO_NAME/build/Telegram.app" "artifact/MakuGramR-macos-${{ matrix.arch }}.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: MakuGram-macos-${{ matrix.arch }}
-          path: artifact/MakuGram-macos-${{ matrix.arch }}.zip
+          name: MakuGramR-macos-${{ matrix.arch }}
+          path: artifact/MakuGramR-macos-${{ matrix.arch }}.zip
           retention-days: 30
+
+  release:
+    if: github.repository == 'pon4ikisdonut/MakuGram' && github.event_name == 'push' && github.ref == 'refs/heads/makugram'
+    name: Publish GitHub Release
+    needs: [windows, linux, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: release_assets
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release_dist
+          find release_assets -type f \( -name "*.exe" -o -name "*.zip" -o -name "*.tar.xz" -o -name "*.tar.gz" \) -exec cp {} release_dist/ \;
+          ls -la release_dist/
+
+      - name: Create or update Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.1.0-b${{ github.run_number }}
+          name: "MakuGramR (Refresh) v1.1.0 (Build #${{ github.run_number }})"
+          body: |
+            ## MakuGramR (Refresh) — Build #${{ github.run_number }}
+            Автоматическая сборка клиента MakuGramR.
+
+            ### Что нового:
+            - **MakuGramR (Refresh)**: обновленный брендинг и информация в О клиенте
+            - **Ghost Mode (Режим невидимки)**: скрытие онлайна, тайпинга, непрочитанные сообщения, анонимный просмотр историй
+            - **Встроенный TG WS Proxy**: туннелирование MTProto через WebSocket WSS (Cloudflare) с автообновлением доменов с GitHub
+            - **Система номеров сборок**: сборка #${{ github.run_number }}
+            - **Авто-обновление**: поддержка обновлений прямо из релизов GitHub
+            - **Установщик Windows**: официальный инсталлятор Inno Setup x64
+          files: release_dist/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

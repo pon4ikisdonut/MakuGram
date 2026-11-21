@@ -177,6 +177,22 @@ public:
 	void setCurrencyConverterTargets(const QString &targets);
 	[[nodiscard]] rpl::producer<QString> currencyConverterTargetsChanges() const;
 
+	[[nodiscard]] bool betaUpdates() const;
+	void setBetaUpdates(bool enabled);
+	[[nodiscard]] rpl::producer<bool> betaUpdatesChanges() const;
+
+	[[nodiscard]] bool tgWsProxyEnabled() const;
+	void setTgWsProxyEnabled(bool enabled);
+	[[nodiscard]] rpl::producer<bool> tgWsProxyEnabledChanges() const;
+
+	[[nodiscard]] int tgWsProxyPort() const;
+	void setTgWsProxyPort(int port);
+	[[nodiscard]] rpl::producer<int> tgWsProxyPortChanges() const;
+
+	[[nodiscard]] QString tgWsProxyWorker() const;
+	void setTgWsProxyWorker(const QString &worker);
+	[[nodiscard]] rpl::producer<QString> tgWsProxyWorkerChanges() const;
+
 private:
 	Settings();
 	~Settings() = default;
@@ -221,6 +237,10 @@ private:
 	bool _streamerMode = false;
 	bool _currencyConverter = false;
 	QString _currencyConverterTargets = "USD,RUB,KZT";
+	bool _betaUpdates = false;
+	bool _tgWsProxyEnabled = false;
+	int _tgWsProxyPort = 1443;
+	QString _tgWsProxyWorker;
 
 	rpl::event_stream<bool> _hideMessagesFromBlockedChanges;
 	rpl::event_stream<bool> _quickBanInRequestsChanges;
@@ -255,6 +275,10 @@ private:
 	rpl::event_stream<bool> _streamerModeChanges;
 	rpl::event_stream<bool> _currencyConverterChanges;
 	rpl::event_stream<QString> _currencyConverterTargetsChanges;
+	rpl::event_stream<bool> _betaUpdatesChanges;
+	rpl::event_stream<bool> _tgWsProxyEnabledChanges;
+	rpl::event_stream<int> _tgWsProxyPortChanges;
+	rpl::event_stream<QString> _tgWsProxyWorkerChanges;
 };
 
 } // namespace MakuGram

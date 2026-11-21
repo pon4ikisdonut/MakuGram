@@ -189,10 +189,14 @@ public:
 			_network = std::make_unique<QNetworkAccessManager>(this);
 		}
 
-		const auto url = QUrl(u"https://api.github.com/repos/MarkAdderly/MakuGram/releases/latest"_q);
+		const auto repo = QString::fromLatin1(kGitHubRepo);
+		const bool beta = MakuGram::Settings::instance().betaUpdates();
+		const auto url = beta
+			? QUrl(u"https://api.github.com/repos/%1/releases"_q.arg(repo))
+			: QUrl(u"https://api.github.com/repos/%1/releases/latest"_q.arg(repo));
 		auto request = QNetworkRequest(url);
 		request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
-		request.setRawHeader("User-Agent", "MakuGram-App");
+		request.setRawHeader("User-Agent", "MakuGramR-App");
 		request.setRawHeader("Accept", "application/vnd.github.v3+json");
 
 		const auto reply = _network->get(request);
@@ -214,7 +218,7 @@ public:
 			const auto data = reply->readAll();
 			QJsonParseError parseError;
 			const auto doc = QJsonDocument::fromJson(data, &parseError);
-			if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+			if (parseError.error != QJsonParseError::NoError || (!doc.isObject() && !doc.isArray())) {
 				if (!silent && controller) {
 					controller->showToast(Tr::Get(
 						u"Ошибка обработки ответа от GitHub."_q,
@@ -223,7 +227,22 @@ public:
 				return;
 			}
 
-			const auto obj = doc.object();
+			QJsonObject obj;
+			if (doc.isArray()) {
+				const auto arr = doc.array();
+				if (arr.isEmpty()) {
+					if (!silent && controller) {
+						controller->showToast(Tr::Get(
+							QString::fromUtf8("У вас установлена последняя версия MakuGramR (v%1, сборка #%2)").arg(kVersion).arg(kBuildNumber),
+							QString::fromUtf8("You have the latest version of MakuGramR (v%1, build #%2)").arg(kVersion).arg(kBuildNumber)));
+					}
+					return;
+				}
+				obj = arr.first().toObject();
+			} else {
+				obj = doc.object();
+			}
+
 			ReleaseInfo info;
 			info.tag = obj.value(u"tag_name"_q).toString();
 			info.name = obj.value(u"name"_q).toString();
@@ -258,15 +277,22 @@ public:
 			const auto currentVer = ParseVersion(kVersion);
 			const auto latestVer = ParseVersion(info.tag);
 
-			if (currentVer < latestVer) {
+			int tagBuild = 0;
+			static const auto buildRegex = QRegularExpression(u"-b(\\d+)"_q);
+			const auto match = buildRegex.match(info.tag);
+			if (match.hasMatch()) {
+				tagBuild = match.captured(1).toInt();
+			}
+
+			if ((currentVer < latestVer) || (tagBuild > kBuildNumber)) {
 				if (controller) {
 					showUpdateBox(controller, info);
 				}
 			} else {
 				if (!silent && controller) {
 					controller->showToast(Tr::Get(
-						QString::fromUtf8("У вас установлена последняя версия MakuGram (v%1)").arg(kVersion),
-						QString::fromUtf8("You have the latest version of MakuGram (v%1)").arg(kVersion)));
+						QString::fromUtf8("У вас установлена последняя версия MakuGramR (v%1, сборка #%2)").arg(kVersion).arg(kBuildNumber),
+						QString::fromUtf8("You have the latest version of MakuGramR (v%1, build #%2)").arg(kVersion).arg(kBuildNumber)));
 				}
 			}
 		});
@@ -279,13 +305,13 @@ private:
 		controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 			box->setWidth(500);
 			box->setTitle(Tr::Value(
-				u"Доступно обновление MakuGram!"_q,
-				u"MakuGram update available!"_q));
+				u"Доступно обновление MakuGramR!"_q,
+				u"MakuGramR update available!"_q));
 
 			QString versionInfo = Tr::Get(
-				u"Найдена новая версия: %1 (текущая: v%2)"_q,
-				u"New version available: %1 (current: v%2)"_q
-			).arg(release.tag.startsWith('v') ? release.tag : ("v" + release.tag)).arg(kVersion);
+				u"Найдена новая версия: %1 (текущая: v%2, сборка #%3)"_q,
+				u"New version available: %1 (current: v%2, build #%3)"_q
+			).arg(release.tag.startsWith('v') ? release.tag : ("v" + release.tag)).arg(kVersion).arg(kBuildNumber);
 
 			if (!release.name.isEmpty() && release.name != release.tag) {
 				versionInfo += u"\n"_q + release.name;

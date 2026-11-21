@@ -4,6 +4,7 @@ a custom Telegram Desktop client fork.
 */
 #include "makugram/makugram_settings.h"
 #include "makugram/makugram_updater.h"
+#include "makugram/tg_ws_proxy.h"
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "rpl/then.h"
@@ -157,8 +158,16 @@ Settings::Settings() {
 	_streamerMode = s.value("streamerMode", false).toBool();
 	_currencyConverter = s.value("currencyConverter", false).toBool();
 	_currencyConverterTargets = s.value("currencyConverterTargets", QString("USD,RUB,KZT")).toString();
+	_betaUpdates = s.value("betaUpdates", false).toBool();
+	_tgWsProxyEnabled = s.value("tgWsProxyEnabled", false).toBool();
+	_tgWsProxyPort = s.value("tgWsProxyPort", 1443).toInt();
+	_tgWsProxyWorker = s.value("tgWsProxyWorker", QString()).toString();
 
 	parseSpamKeywords();
+
+	if (_tgWsProxyEnabled) {
+		TgWsProxy::instance().start();
+	}
 }
 
 void Settings::parseSpamKeywords() {
@@ -804,6 +813,74 @@ void Settings::setCurrencyConverterTargets(const QString &targets) {
 
 rpl::producer<QString> Settings::currencyConverterTargetsChanges() const {
 	return _currencyConverterTargetsChanges.events();
+}
+
+bool Settings::betaUpdates() const {
+	return _betaUpdates;
+}
+
+void Settings::setBetaUpdates(bool enabled) {
+	if (_betaUpdates != enabled) {
+		_betaUpdates = enabled;
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("betaUpdates", enabled);
+		_betaUpdatesChanges.fire_copy(enabled);
+	}
+}
+
+rpl::producer<bool> Settings::betaUpdatesChanges() const {
+	return _betaUpdatesChanges.events();
+}
+
+bool Settings::tgWsProxyEnabled() const {
+	return _tgWsProxyEnabled;
+}
+
+void Settings::setTgWsProxyEnabled(bool enabled) {
+	if (_tgWsProxyEnabled != enabled) {
+		_tgWsProxyEnabled = enabled;
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("tgWsProxyEnabled", enabled);
+		_tgWsProxyEnabledChanges.fire_copy(enabled);
+	}
+}
+
+rpl::producer<bool> Settings::tgWsProxyEnabledChanges() const {
+	return _tgWsProxyEnabledChanges.events();
+}
+
+int Settings::tgWsProxyPort() const {
+	return _tgWsProxyPort;
+}
+
+void Settings::setTgWsProxyPort(int port) {
+	if (_tgWsProxyPort != port) {
+		_tgWsProxyPort = port;
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("tgWsProxyPort", port);
+		_tgWsProxyPortChanges.fire_copy(port);
+	}
+}
+
+rpl::producer<int> Settings::tgWsProxyPortChanges() const {
+	return _tgWsProxyPortChanges.events();
+}
+
+QString Settings::tgWsProxyWorker() const {
+	return _tgWsProxyWorker;
+}
+
+void Settings::setTgWsProxyWorker(const QString &worker) {
+	if (_tgWsProxyWorker != worker) {
+		_tgWsProxyWorker = worker;
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("tgWsProxyWorker", worker);
+		_tgWsProxyWorkerChanges.fire_copy(worker);
+	}
+}
+
+rpl::producer<QString> Settings::tgWsProxyWorkerChanges() const {
+	return _tgWsProxyWorkerChanges.events();
 }
 
 void BlurImageStrong(QImage &image) {

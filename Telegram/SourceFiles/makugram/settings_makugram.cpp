@@ -6,6 +6,7 @@ a custom Telegram Desktop client fork.
 #include "makugram/currency_converter.h"
 #include "makugram/makugram_updater.h"
 #include "makugram/makugram_lang.h"
+#include "makugram/tg_ws_proxy.h"
 #include "boxes/connection_box.h"
 
 #include "makugram/makugram_settings.h"
@@ -751,20 +752,116 @@ void ShowStreamerModeBox(not_null<Window::SessionController*> controller) {
 	}));
 }
 
+void ShowProxySettingsBox(not_null<Window::SessionController*> controller) {
+	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+		box->setWidth(kBoxContentWidth);
+		box->setMaxHeight(kBoxMaxHeight);
+		box->setTitle(Tr::Value(
+			QString::fromUtf8("Прокси и ускорение сети"),
+			u"Proxy & Network Acceleration"_q));
+
+		AddCheckboxRow(
+			box,
+			Tr::Value(
+				QString::fromUtf8("Встроенный TG WS Proxy (WebSocket)"),
+				u"Built-in TG WS Proxy (WebSocket)"_q),
+			MakuGram::Settings::instance().tgWsProxyEnabled(),
+			[=](bool checked) {
+				MakuGram::Settings::instance().setTgWsProxyEnabled(checked);
+				MakuGram::TgWsProxy::instance().applyToProxySettings(checked);
+			},
+			Tr::Value(
+				QString::fromUtf8("Туннелирование MTProto трафика через защищенные WebSocket WSS соединения (Cloudflare) для полного обхода замедлений, фильтрации DPI и блокировок Telegram без использования сторонних VPN."),
+				u"Tunnel MTProto traffic over secure WebSocket WSS connections (Cloudflare) to bypass throttling, DPI filtering, and Telegram blocks without external VPN."_q));
+
+		AddCheckboxRow(
+			box,
+			Tr::Value(
+				QString::fromUtf8("Получать предварительные и бета-версии"),
+				u"Receive pre-release and beta updates"_q),
+			MakuGram::Settings::instance().betaUpdates(),
+			[=](bool checked) {
+				MakuGram::Settings::instance().setBetaUpdates(checked);
+			},
+			Tr::Value(
+				QString::fromUtf8("Проверять и автоматически предлагать установку свежих предварительных релизов MakuGramR с GitHub."),
+				u"Check and suggest installing pre-release MakuGramR builds directly from GitHub."_q));
+
+		box->addSkip(st::boxMediumSkip);
+
+		const auto buttonWidth = kBoxContentWidth
+			- st::boxRowPadding.left()
+			- st::boxRowPadding.right();
+
+		const auto updateDomainsBtn = box->addRow(
+			object_ptr<Ui::RoundButton>(
+				box,
+				Tr::Value(
+					QString::fromUtf8("Обновить список прокси с GitHub"),
+					u"Update proxy list from GitHub"_q),
+				st::defaultBoxButton),
+			style::margins(
+				st::boxRowPadding.left(),
+				4,
+				st::boxRowPadding.right(),
+				4));
+		updateDomainsBtn->setFullWidth(buttonWidth);
+		updateDomainsBtn->setFullRadius(true);
+		updateDomainsBtn->setClickedCallback([=] {
+			controller->showToast(Tr::Get(
+				QString::fromUtf8("Обновление списка прокси с GitHub..."),
+				u"Updating proxy list from GitHub..."_q));
+			MakuGram::TgWsProxy::instance().updateDomainsFromGitHub([=](bool success, int count) {
+				if (success) {
+					controller->showToast(Tr::Get(
+						QString::fromUtf8("Список прокси обновлен! Активно доменов: %1").arg(count),
+						QString::fromUtf8("Proxy list updated! Active domains: %1").arg(count)));
+				} else {
+					controller->showToast(Tr::Get(
+						QString::fromUtf8("Не удалось обновить список с GitHub (используются кэшированные домены: %1)").arg(count),
+						QString::fromUtf8("Failed to update from GitHub (using cached domains: %1)").arg(count)));
+				}
+			});
+		});
+
+		const auto nativeProxyBtn = box->addRow(
+			object_ptr<Ui::RoundButton>(
+				box,
+				Tr::Value(
+					QString::fromUtf8("Стандартные настройки прокси Telegram..."),
+					u"Standard Telegram Proxy Settings..."_q),
+				st::defaultBoxButton),
+			style::margins(
+				st::boxRowPadding.left(),
+				4,
+				st::boxRowPadding.right(),
+				4));
+		nativeProxyBtn->setFullWidth(buttonWidth);
+		nativeProxyBtn->setFullRadius(true);
+		nativeProxyBtn->setClickedCallback([=] {
+			ProxiesBoxController::Show(controller);
+		});
+
+		box->addButton(tr::lng_close(), [=] {
+			box->closeBox();
+		});
+	}));
+}
+
 void ShowAboutBox(not_null<Window::SessionController*> controller) {
 	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setWidth(kBoxContentWidth);
 		box->setMaxHeight(kBoxMaxHeight);
 		box->setTitle(Tr::Value(
-			QString::fromUtf8("О клиенте MakuGram"),
-			u"About MakuGram"_q));
+			QString::fromUtf8("О клиенте MakuGramR"),
+			u"About MakuGramR"_q));
 
 		box->addRow(
 			object_ptr<Ui::FlatLabel>(
 				box,
 				Tr::Value(
-					QString::fromUtf8("MakuGram - форк Telegram с расширенными возможностями модерации, приватности и удобства."),
-					u"MakuGram is a Telegram fork with advanced moderation, privacy, and convenience features."_q),
+					QString::fromUtf8("MakuGramR (Refresh) — форк MakuGram с расширенными возможностями модерации, приватности, встроенным WS-прокси и режимом невидимки."),
+					u"MakuGramR (Refresh) is a fork of MakuGram with advanced moderation, privacy, built-in WS proxy, and ghost mode."_q),
 				st::boxLabel),
 			st::boxRowPadding);
 
@@ -774,8 +871,12 @@ void ShowAboutBox(not_null<Window::SessionController*> controller) {
 			object_ptr<Ui::FlatLabel>(
 				box,
 				Tr::Value(
-					QString::fromUtf8("Версия: %1\nАвтор - Марк Аддерли").arg(MakuGram::kVersion),
-					QString::fromUtf8("Version: %1\nAuthor - Mark Adderly").arg(MakuGram::kVersion)),
+					QString::fromUtf8("Версия: %1 (Сборка #%2)\nАвтор (Refresh): pon4ikisdonut\nАвтор (Original MakuGram): Mark Adderly")
+						.arg(MakuGram::kVersion)
+						.arg(MakuGram::kBuildNumber),
+					QString::fromUtf8("Version: %1 (Build #%2)\nAuthor (Refresh): pon4ikisdonut\nAuthor (Original MakuGram): Mark Adderly")
+						.arg(MakuGram::kVersion)
+						.arg(MakuGram::kBuildNumber)),
 				st::boxLabel),
 			st::boxRowPadding);
 
@@ -803,6 +904,50 @@ void ShowAboutBox(not_null<Window::SessionController*> controller) {
 			MakuGram::CheckForUpdates(controller, /*silent=*/false);
 		});
 
+		const auto radugaChatBtn = box->addRow(
+			object_ptr<Ui::RoundButton>(
+				box,
+				Tr::Value(
+					QString::fromUtf8("Чат ОПГ «Радуга»"),
+					u"Chat OPG «Raduga»"_q),
+				TelegramButtonStyle()),
+			style::margins(
+				st::boxRowPadding.left(),
+				4,
+				st::boxRowPadding.right(),
+				4));
+		radugaChatBtn->setFullWidth(buttonWidth);
+		radugaChatBtn->setFullRadius(true);
+		radugaChatBtn->setClickedCallback([=] {
+			UrlClickHandler::Open(
+				u"https://t.me/OPG_R4duga"_q,
+				QVariant::fromValue(ClickHandlerContext{
+					.sessionWindow = base::make_weak(controller),
+				}));
+		});
+
+		const auto authorTgBtn = box->addRow(
+			object_ptr<Ui::RoundButton>(
+				box,
+				Tr::Value(
+					QString::fromUtf8("Telegram автора (Refresh)"),
+					u"Author's Telegram (Refresh)"_q),
+				TelegramButtonStyle()),
+			style::margins(
+				st::boxRowPadding.left(),
+				4,
+				st::boxRowPadding.right(),
+				4));
+		authorTgBtn->setFullWidth(buttonWidth);
+		authorTgBtn->setFullRadius(true);
+		authorTgBtn->setClickedCallback([=] {
+			UrlClickHandler::Open(
+				u"https://t.me/pon4ikisdonut"_q,
+				QVariant::fromValue(ClickHandlerContext{
+					.sessionWindow = base::make_weak(controller),
+				}));
+		});
+
 		const auto ghBtn = box->addRow(
 			object_ptr<Ui::RoundButton>(
 				box,
@@ -818,65 +963,25 @@ void ShowAboutBox(not_null<Window::SessionController*> controller) {
 		ghBtn->setFullWidth(buttonWidth);
 		ghBtn->setFullRadius(true);
 		ghBtn->setClickedCallback([=] {
+			UrlClickHandler::Open(u"https://github.com/pon4ikisdonut/MakuGram"_q);
+		});
+
+		const auto origGhBtn = box->addRow(
+			object_ptr<Ui::RoundButton>(
+				box,
+				Tr::Value(
+					QString::fromUtf8("Репозиторий оригинального MakuGram"),
+					u"Original MakuGram Repo"_q),
+				st::defaultBoxButton),
+			style::margins(
+				st::boxRowPadding.left(),
+				4,
+				st::boxRowPadding.right(),
+				4));
+		origGhBtn->setFullWidth(buttonWidth);
+		origGhBtn->setFullRadius(true);
+		origGhBtn->setClickedCallback([=] {
 			UrlClickHandler::Open(u"https://github.com/MarkAdderly/MakuGram"_q);
-		});
-
-		const auto tgBtn = box->addRow(
-			object_ptr<Ui::RoundButton>(
-				box,
-				Tr::Value(
-					QString::fromUtf8("Telegram канал автора"),
-					u"Author's Telegram Channel"_q),
-				TelegramButtonStyle()),
-			style::margins(
-				st::boxRowPadding.left(),
-				4,
-				st::boxRowPadding.right(),
-				4));
-		tgBtn->setFullWidth(buttonWidth);
-		tgBtn->setFullRadius(true);
-		tgBtn->setClickedCallback([=] {
-			UrlClickHandler::Open(
-				u"https://t.me/adderly324"_q,
-				QVariant::fromValue(ClickHandlerContext{
-					.sessionWindow = base::make_weak(controller),
-				}));
-		});
-
-		const auto ytBtn = box->addRow(
-			object_ptr<Ui::RoundButton>(
-				box,
-				Tr::Value(
-					QString::fromUtf8("YouTube канал автора"),
-					u"Author's YouTube Channel"_q),
-				YouTubeButtonStyle()),
-			style::margins(
-				st::boxRowPadding.left(),
-				4,
-				st::boxRowPadding.right(),
-				4));
-		ytBtn->setFullWidth(buttonWidth);
-		ytBtn->setFullRadius(true);
-		ytBtn->setClickedCallback([=] {
-			UrlClickHandler::Open(u"https://youtube.com/@makuadarii"_q);
-		});
-
-		const auto boostyBtn = box->addRow(
-			object_ptr<Ui::RoundButton>(
-				box,
-				Tr::Value(
-					QString::fromUtf8("Поддержать разработку"),
-					u"Support Development"_q),
-				BoostyButtonStyle()),
-			style::margins(
-				st::boxRowPadding.left(),
-				4,
-				st::boxRowPadding.right(),
-				8));
-		boostyBtn->setFullWidth(buttonWidth);
-		boostyBtn->setFullRadius(true);
-		boostyBtn->setClickedCallback([=] {
-			UrlClickHandler::Open(u"https://boosty.to/adderly"_q);
 		});
 
 		box->addButton(tr::lng_close(), [=] {
@@ -944,10 +1049,10 @@ void BuildMakuGramSection(SectionBuilder &builder) {
 	});
 
 	builder.addButton({
-		.title = Tr::Value(QString::fromUtf8("Настройки прокси"), u"Proxy Settings"_q),
+		.title = Tr::Value(QString::fromUtf8("Настройки прокси и сети"), u"Proxy & Network Settings"_q),
 		.icon = { &st::menuIconNetwork },
-		.onClick = [=] { ProxiesBoxController::Show(controller); },
-		.keywords = { u"proxy"_q, u"прокси"_q, u"vpn"_q, u"впн"_q, u"network"_q, u"сеть"_q },
+		.onClick = [=] { ShowProxySettingsBox(controller); },
+		.keywords = { u"proxy"_q, u"прокси"_q, u"vpn"_q, u"впн"_q, u"network"_q, u"сеть"_q, u"ws"_q, u"websocket"_q },
 	});
 
 	builder.addButton({
@@ -958,16 +1063,16 @@ void BuildMakuGramSection(SectionBuilder &builder) {
 	});
 
 	builder.addButton({
-		.title = Tr::Value(QString::fromUtf8("О клиенте"), u"About MakuGram"_q),
+		.title = Tr::Value(QString::fromUtf8("О клиенте MakuGramR"), u"About MakuGramR"_q),
 		.icon = { &st::menuIconInfo },
 		.onClick = [=] { ShowAboutBox(controller); },
-		.keywords = { u"about"_q, u"makugram"_q, u"version"_q, u"версия"_q, u"информация"_q },
+		.keywords = { u"about"_q, u"makugram"_q, u"makugramr"_q, u"version"_q, u"версия"_q, u"информация"_q },
 	});
 
 	builder.addDivider();
 	builder.addDividerText(Tr::Value(
-		QString::fromUtf8("Нажмите на категорию для настройки параметров MakuGram."),
-		u"Click a category to configure MakuGram settings."_q));
+		QString::fromUtf8("Нажмите на категорию для настройки параметров MakuGramR."),
+		u"Click a category to configure MakuGramR settings."_q));
 }
 
 const auto kMeta = BuildHelper({
@@ -987,7 +1092,7 @@ MakuGramSection::MakuGramSection(
 }
 
 rpl::producer<QString> MakuGramSection::title() {
-	return Tr::Value(QString::fromUtf8("Функции MakuGram"), u"MakuGram Features"_q);
+	return Tr::Value(QString::fromUtf8("Функции MakuGramR"), u"MakuGramR Features"_q);
 }
 
 void MakuGramSection::setupContent() {

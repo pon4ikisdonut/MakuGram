@@ -1,79 +1,73 @@
-# [MakuGram] – Telegram Fork for Windows (I didn't fill this yet)
+# MakuGramR (Refresh)
 
-This is the complete source code and the build instructions for the official [Telegram][telegram] messenger desktop client, based on the [Telegram API][telegram_api] and the [MTProto][telegram_proto] secure protocol.
+[![Build MakuGram](https://github.com/pon4ikisdonut/MakuGram/actions/workflows/build.yml/badge.svg)](https://github.com/pon4ikisdonut/MakuGram/actions/workflows/build.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/pon4ikisdonut/MakuGram?include_prereleases&label=release)](https://github.com/pon4ikisdonut/MakuGram/releases)
+[![Telegram Chat](https://img.shields.io/badge/Telegram-Чат%20ОПГ%20«Радуга»-blue.svg)](https://t.me/OPG_R4duga)
 
-[![Version](https://badge.fury.io/gh/telegramdesktop%2Ftdesktop.svg)](https://github.com/telegramdesktop/tdesktop/releases)
-[![Build Status](https://github.com/telegramdesktop/tdesktop/workflows/Windows./badge.svg)](https://github.com/telegramdesktop/tdesktop/actions)
-[![Build Status](https://github.com/telegramdesktop/tdesktop/workflows/MacOS./badge.svg)](https://github.com/telegramdesktop/tdesktop/actions)
-[![Build Status](https://github.com/telegramdesktop/tdesktop/workflows/Linux./badge.svg)](https://github.com/telegramdesktop/tdesktop/actions)
-[![Built with Depot](https://img.shields.io/badge/Built%20with-Depot.dev-46A75A)](https://depot.dev)
+**MakuGramR (Refresh)** — форк Telegram Desktop и MakuGram с расширенными возможностями модерации, приватности, встроенным WebSocket-прокси (TG WS Proxy) и полноценным режимом невидимки (Ghost Mode).
 
-[![Preview of Telegram Desktop][preview_image]][preview_image_url]
+---
 
-The source code is published under GPLv3 with OpenSSL exception, the license is available [here][license].
+## 👥 Авторы и Сообщество
 
-## Supported systems
+* **Автор (Refresh)**: [pon4ikisdonut](https://t.me/pon4ikisdonut)
+* **Автор (Original MakuGram)**: [Mark Adderly](https://github.com/MarkAdderly)
+* **Чат ОПГ «Радуга»**: [t.me/OPG_R4duga](https://t.me/OPG_R4duga)
+* **Личка автора**: [t.me/pon4ikisdonut](https://t.me/pon4ikisdonut)
+* **Репозиторий проекта**: [github.com/pon4ikisdonut/MakuGram](https://github.com/pon4ikisdonut/MakuGram)
+* **Оригинальный репозиторий MakuGram**: [github.com/MarkAdderly/MakuGram](https://github.com/MarkAdderly/MakuGram)
 
-The latest version is available for
-* [Windows 7 and above (64 bit)]
+---
 
-## Third-party
+## ✨ Ключевые возможности
 
-* Qt 6 ([LGPL](http://doc.qt.io/qt-6/lgpl.html)) and Qt 5.15 ([LGPL](http://doc.qt.io/qt-5/lgpl.html)) slightly patched
-* OpenSSL 3.2.1 ([Apache License 2.0](https://openssl-library.org/source/license/apache-license-2.0.txt))
-* WebRTC ([New BSD License](https://github.com/desktop-app/tg_owt/blob/master/LICENSE))
-* zlib ([zlib License](http://www.zlib.net/zlib_license.html))
-* LZMA SDK 9.20 ([public domain](http://www.7-zip.org/sdk.html))
-* liblzma ([public domain](http://tukaani.org/xz/))
-* Google Breakpad ([License](https://chromium.googlesource.com/breakpad/breakpad/+/master/LICENSE))
-* Google Crashpad ([Apache License 2.0](https://chromium.googlesource.com/crashpad/crashpad/+/master/LICENSE))
-* GYP ([BSD License](https://github.com/bnoordhuis/gyp/blob/master/LICENSE))
-* Ninja ([Apache License 2.0](https://github.com/ninja-build/ninja/blob/master/COPYING))
-* OpenAL Soft ([LGPL](https://github.com/kcat/openal-soft/blob/master/COPYING))
-* Opus codec ([BSD License](http://www.opus-codec.org/license/))
-* FFmpeg ([LGPL](https://www.ffmpeg.org/legal.html))
-* Guideline Support Library ([MIT License](https://github.com/Microsoft/GSL/blob/master/LICENSE))
-* Range-v3 ([Boost License](https://github.com/ericniebler/range-v3/blob/master/LICENSE.txt))
-* Open Sans font ([Apache License 2.0](http://www.apache.org/licenses/LICENSE-2.0.html))
-* Vazirmatn font ([SIL Open Font License 1.1](https://github.com/rastikerdar/vazirmatn/blob/master/OFL.txt))
-* Emoji alpha codes ([MIT License](https://github.com/emojione/emojione/blob/master/extras/alpha-codes/LICENSE.md))
-* xxHash ([BSD License](https://github.com/Cyan4973/xxHash/blob/dev/LICENSE))
-* QR Code generator ([MIT License](https://github.com/nayuki/QR-Code-generator#license))
-* CMake ([New BSD License](https://github.com/Kitware/CMake/blob/master/Copyright.txt))
-* Hunspell ([LGPL](https://github.com/hunspell/hunspell/blob/master/COPYING.LESSER))
-* Ada ([Apache License 2.0](https://github.com/ada-url/ada/blob/main/LICENSE-APACHE))
-* zxcvbn-c ([MIT License](https://github.com/tsyrogit/zxcvbn-c/blob/master/LICENSE.txt))
-* twidget ([BSD 3-Clause License](https://github.com/TelegramMessenger/twidget/blob/main/LICENSE))
-* litehtml ([BSD 3-Clause License](https://github.com/litehtml/litehtml/blob/master/LICENSE))
-* Gumbo ([Apache License 2.0](https://github.com/google/gumbo-parser/blob/master/COPYING))
-* QuickJS-ng ([MIT License](https://github.com/quickjs-ng/quickjs/blob/master/LICENSE))
-* FrequencyWords by Hermit Dave ([Creative Commons Attribution-ShareAlike 4.0](https://creativecommons.org/licenses/by-sa/4.0/))
+### 👻 Ghost Mode (Режим невидимки)
+* **Не передавать статус «В сети»**: собеседники всегда видят статус «был(а) недавно», даже если вы активно используете клиент и отправляете сообщения.
+* **Не отмечать сообщения прочитанными**: входящие сообщения остаются непрочитанными на сервере, собеседник не видит галочек о прочтении.
+* **Скрытие набора текста**: никто не увидит, что вы печатаете текст, записываете голосовое или видеосообщение.
+* **Анонимный просмотр историй**: просмотр историй пользователей и каналов без отметки и без попадания в список просмотров.
+* **Не отправлять статус прослушивания**: открытие голосовых сообщений и видеокружков не передается серверу.
 
-## Build instructions
+### 🌐 Встроенный TG WS Proxy (WebSocket MTProto Proxy)
+* Полноценно встроенный в клиент локальный WebSocket-прокси для обхода DPI, замедлений и сетевых блокировок Telegram через Cloudflare без использования сторонних VPN.
+* Автоматическая загрузка и обновление списка рабочих WebSocket-доменов прямо из GitHub (`Flowseal/tg-ws-proxy`).
+* Переключение в один клик в «Настройках прокси и сети» с авто-конфигурацией соединения.
+* Автоматический failover между серверами и официальными шлюзами Telegram Web (`venus`, `aurora`, `vesta`, `pluto`, `flora`).
 
-* [Windows (32-bit and 64-bit)][win]
+### 📦 Авто-обновления и CI/CD
+* **GitHub Releases Auto-Updater**: обновление прямо из релизов GitHub в один клик с бесшовной подменой бинарного файла на лету.
+* **Поддержка бета-сборок**: возможность получать предварительные тестовые версии.
+* **Система номеров билдов**: каждый запуск сборки в CI инкрементирует номер билда (Build #N), отображаемый в окне «О клиенте».
+* **Готовый установщик Windows**: сборка официального инсталлятора Inno Setup (`MakuGramR-Setup-x64.exe`) прямо в GitHub Actions.
 
-[//]: # (LINKS)
-[telegram]: https://telegram.org
-[telegram_desktop]: https://desktop.telegram.org
-[telegram_api]: https://core.telegram.org
-[telegram_proto]: https://core.telegram.org/mtproto
-[license]: LICENSE
-[win]: docs/building-win.md
-[mac]: docs/building-mac.md
-[linux]: docs/building-linux.md
-[preview_image]: https://github.com/telegramdesktop/tdesktop/blob/dev/docs/assets/preview.png "Preview of Telegram Desktop"
-[preview_image_url]: https://raw.githubusercontent.com/telegramdesktop/tdesktop/dev/docs/assets/preview.png
+### 🛡️ Модерация и удобство чатов
+* **Пересылка без автора**: отправка сообщений без указания исходного источника.
+* **Локальный спам-фильтр**: продвинутый фильтр нежелательных слов с поддержкой масок (`*`) и регулярных выражений.
+* **Быстрый бан в заявках**: кнопка немедленного бана прямо в окне заявок на вступление.
+* **Бейдж «Новичок»**: подсветка участников, вступивших в группу менее 3 месяцев назад.
+* **Снятие ограничений на копирование**: возможность копировать текст, медиа и делать скриншоты в защищенных каналах.
+* **Массовое удаление**: быстрая очистка своих сообщений за день, неделю, месяц или всё время.
 
-## Thanks to
+### 🎬 Медиа и внешний вид
+* **Отправка медиа в максимальном качестве**: отправка фото и видео без избыточного сжатия по умолчанию.
+* **Регулировка громкости колесиком мыши**: быстрое изменение звука при полноэкранном воспроизведении.
+* **Конвертер валют**: автоматическое распознавание валют в сообщениях с конвертацией по клику или наведению.
+* **Режим стримера**: размытие аватарок и сокрытие конфиденциальных данных для безопасных стримов и записей экрана.
+* **Компактный список чатов**: увеличение вместимости списка диалогов в два раза.
 
-<a href="https://depot.dev">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://depot.dev/assets/brand/1693758816/depot-logo-horizontal-on-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="https://depot.dev/assets/brand/1693758816/depot-logo-horizontal-on-light.svg">
-    <img alt="Depot" src="https://depot.dev/assets/brand/1693758816/depot-logo-horizontal-on-light.svg" width="150">
-  </picture>
-</a>
+---
 
-CI infrastructure sponsored by [Depot](https://depot.dev) — fast GitHub Actions runners.
+## 🛠️ Сборка из исходников
 
+Сборка осуществляется через стандартную систему сборки Telegram Desktop с поддержкой CMake и Visual Studio 2022 (MSVC v143 / v144):
+
+Подробные инструкции по сборке:
+* [Сборка под Windows](docs/building-win.md)
+* [Сборка под Linux](docs/building-linux.md)
+* [Сборка под macOS](docs/building-mac.md)
+
+---
+
+## 📄 Лицензия
+
+MakuGramR распространяется под лицензией GNU General Public License v3.0 с исключением OpenSSL (GPLv3 with OpenSSL Exception). Подробности в файле [LICENSE](LICENSE).

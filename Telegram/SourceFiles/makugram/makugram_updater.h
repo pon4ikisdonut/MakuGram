@@ -1,5 +1,5 @@
 /*
-This file is part of MakuGram,
+This file is part of MakuGramR,
 a custom Telegram Desktop client fork.
 */
 #pragma once
@@ -12,8 +12,15 @@ class SessionController;
 
 namespace MakuGram {
 
-inline constexpr auto kVersion = "1.0.3";
-inline constexpr auto kGitHubRepo = "MarkAdderly/MakuGram";
+inline constexpr auto kAppName = "MakuGramR";
+inline constexpr auto kVersion = "1.1.0";
+inline constexpr auto kGitHubRepo = "pon4ikisdonut/MakuGram";
+
+#ifdef MAKUGRAM_BUILD_NUMBER
+inline constexpr auto kBuildNumber = MAKUGRAM_BUILD_NUMBER;
+#else
+inline constexpr auto kBuildNumber = 1;
+#endif
 
 void CheckForUpdates(Window::SessionController *controller, bool silent = false);
 void CleanOldUpdateFiles();

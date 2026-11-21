@@ -25,10 +25,10 @@ StartWidget::StartWidget(
 	not_null<Data*> data)
 : Step(parent, account, data, true) {
 	setMouseTracking(true);
-	setTitleText(rpl::single(u"MakuGram"_q));
+	setTitleText(rpl::single(u"MakuGramR"_q));
 	setDescriptionText(MakuGram::Tr::Value(
-		QString::fromUtf8("Добро пожаловать в MakuGram.\nБыстрый и удобный форк Telegram."),
-		u"Welcome to MakuGram.\nFast and convenient Telegram fork."_q
+		QString::fromUtf8("Добро пожаловать в MakuGramR.\nБыстрый и удобный форк с расширенными возможностями."),
+		u"Welcome to MakuGramR.\nFast and convenient fork with advanced features."_q
 	));
 	show();
 }

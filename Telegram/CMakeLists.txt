@@ -1993,6 +1993,8 @@ PRIVATE
     makugram/makugram_lang.h
     makugram/settings_makugram.cpp
     makugram/settings_makugram.h
+    makugram/tg_ws_proxy.cpp
+    makugram/tg_ws_proxy.h
     settings/sections/settings_main.cpp
     settings/sections/settings_main.h
     settings/settings_recent_searches.cpp
@@ -2923,6 +2925,10 @@ PRIVATE
     TDESKTOP_API_HASH=${TDESKTOP_API_HASH}
     G_LOG_DOMAIN="Telegram"
 )
+
+if (DEFINED MAKUGRAM_BUILD_NUMBER)
+    target_compile_definitions(Telegram PRIVATE MAKUGRAM_BUILD_NUMBER=${MAKUGRAM_BUILD_NUMBER})
+endif()
 
 get_property(is_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 if (APPLE
