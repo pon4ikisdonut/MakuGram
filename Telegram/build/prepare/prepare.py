@@ -356,6 +356,9 @@ def winFailOnEach(command):
     result = ''
     startingCommand = True
     for command in commands:
+        stripped = command.strip()
+        if not stripped or stripped.startswith('#') or stripped.startswith('::') or stripped.startswith('rem '):
+            continue
         command = re.sub(r'\$([A-Za-z0-9_]+)', r'%\1%', command)
         if re.search(r'\$[^<]', command):
             error('Bad command: ' + command)
@@ -1534,7 +1537,6 @@ release:
     ninja -C out/Release%FolderPostfix% common crash_generation_client exception_handler
     cd tools\\windows\\dump_syms
     gyp dump_syms.gyp --format=msvs
-    # dump_syms requires ATL; not used by Telegram.
     if not "%SKIP_DUMPSYMS%"=="1" msbuild -m dump_syms.vcxproj /property:Configuration=Release /property:Platform="x64" %ToolsetProp%
 win:
     deactivate

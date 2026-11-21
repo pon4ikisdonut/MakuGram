@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_item.h"
 #include "makugram/currency_converter.h"
+#include "makugram/makugram_filter.h"
+#include "makugram/makugram_lang.h"
 #include "makugram/makugram_settings.h"
 
 #include "api/api_premium.h"
@@ -39,7 +41,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session_settings.h"
 #include "menu/menu_ttl_validator.h"
 #include "apiwrap.h"
-#include "makugram/makugram_settings.h"
 #include "media/audio/media_audio.h"
 #include "core/application.h"
 #include "wallet/wallet_address.h"
@@ -3361,6 +3362,9 @@ QString HistoryItem::notificationHeader() const {
 	} else if (out() && isFromScheduled() && !_history->peer->isSelf()) {
 		return tr::lng_from_you(tr::now);
 	} else if (!_history->peer->isUser() && !isPostHidingAuthor()) {
+		if (MakuGram::IsUserHidden(from())) {
+			return MakuGram::Tr::Get(QString::fromUtf8("Скрытый пользователь"), u"Hidden User"_q);
+		}
 		return from()->name();
 	}
 	return QString();
@@ -4262,6 +4266,17 @@ TextWithEntities HistoryItem::translatedTextWithLocalEntities() const {
 		}
 	}
 
+	if (MakuGram::IsUserHidden(from())) {
+		if (!result.text.isEmpty()) {
+			result.entities.clear();
+			result.entities.push_back({
+				EntityType::Spoiler,
+				0,
+				int(result.text.size())
+			});
+		}
+	}
+
 	return result;
 }
 
@@ -5046,6 +5061,16 @@ TextWithEntities HistoryItem::notificationText(
 			result = SpoilerLoginCode(std::move(result));
 		}
 	}
+	if (MakuGram::IsUserHidden(from())) {
+		if (!result.text.isEmpty()) {
+			result.entities.clear();
+			result.entities.push_back({
+				EntityType::Spoiler,
+				0,
+				int(result.text.size())
+			});
+		}
+	}
 	if (result.text.size() <= kNotificationTextLimit) {
 		return result;
 	}
@@ -5094,7 +5119,22 @@ ItemPreview HistoryItem::toPreview(ToPreviewOptions options) const {
 			result.text = SpoilerLoginCode(std::move(result.text));
 		}
 	}
+	if (MakuGram::IsUserHidden(from())) {
+		if (!result.text.text.isEmpty()) {
+			result.text.entities.clear();
+			result.text.entities.push_back({
+				EntityType::Spoiler,
+				0,
+				int(result.text.text.size())
+			});
+		}
+	}
 	const auto fromSender = [](not_null<PeerData*> sender) {
+		if (MakuGram::IsUserHidden(sender)) {
+			return MakuGram::Tr::Get(
+				QString::fromUtf8("Скрытый пользователь"),
+				u"Hidden User"_q);
+		}
 		return sender->isSelf()
 			? tr::lng_from_you(tr::now)
 			: sender->shortName();

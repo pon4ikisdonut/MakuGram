@@ -5,6 +5,7 @@ a custom Telegram Desktop client fork.
 #include "makugram/makugram_settings.h"
 #include "makugram/makugram_updater.h"
 #include "makugram/tg_ws_proxy.h"
+#include "data/data_peer.h"
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "rpl/then.h"
@@ -163,8 +164,11 @@ Settings::Settings() {
 	_tgWsProxyEnabled = s.value("tgWsProxyEnabled", false).toBool();
 	_tgWsProxyPort = s.value("tgWsProxyPort", 1443).toInt();
 	_tgWsProxyWorker = s.value("tgWsProxyWorker", QString()).toString();
+	_hiddenUsersEnabled = s.value("hiddenUsersEnabled", true).toBool();
+	_hiddenUsersRaw = s.value("hiddenUsersRaw", QString()).toString();
 
 	parseSpamKeywords();
+	parseHiddenUsers();
 
 	if (_tgWsProxyEnabled) {
 		TgWsProxy::instance().start();
@@ -900,6 +904,159 @@ void Settings::setTgWsProxyWorker(const QString &worker) {
 
 rpl::producer<QString> Settings::tgWsProxyWorkerChanges() const {
 	return _tgWsProxyWorkerChanges.events();
+}
+
+void Settings::parseHiddenUsers() {
+	_hiddenUsers.clear();
+	const auto list = _hiddenUsersRaw.split(
+		QRegularExpression(u"[\\s,;\\n]+"_q),
+		Qt::SkipEmptyParts);
+	for (const auto &item : list) {
+		auto clean = item.trimmed().toLower();
+		if (clean.startsWith('@')) {
+			clean.remove(0, 1);
+		}
+		if (!clean.isEmpty() && !_hiddenUsers.contains(clean)) {
+			_hiddenUsers.append(clean);
+		}
+	}
+}
+
+bool Settings::hiddenUsersEnabled() const {
+	return _hiddenUsersEnabled;
+}
+
+void Settings::setHiddenUsersEnabled(bool enabled) {
+	if (_hiddenUsersEnabled != enabled) {
+		_hiddenUsersEnabled = enabled;
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("hiddenUsersEnabled", enabled);
+		_hiddenUsersEnabledChanges.fire_copy(enabled);
+		_hiddenUsersChanges.fire(true);
+	}
+}
+
+rpl::producer<bool> Settings::hiddenUsersEnabledChanges() const {
+	return _hiddenUsersEnabledChanges.events();
+}
+
+QString Settings::hiddenUsersRaw() const {
+	return _hiddenUsersRaw;
+}
+
+void Settings::setHiddenUsersRaw(const QString &raw) {
+	if (_hiddenUsersRaw != raw) {
+		_hiddenUsersRaw = raw;
+		parseHiddenUsers();
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("hiddenUsersRaw", raw);
+		_hiddenUsersChanges.fire(true);
+	}
+}
+
+QStringList Settings::hiddenUsersList() const {
+	return _hiddenUsers;
+}
+
+void Settings::addHiddenUser(const QString &usernameOrId) {
+	auto clean = usernameOrId.trimmed();
+	if (clean.isEmpty()) {
+		return;
+	}
+	auto raw = _hiddenUsersRaw.trimmed();
+	if (!raw.isEmpty()) {
+		raw += '\n';
+	}
+	raw += clean;
+	setHiddenUsersRaw(raw);
+}
+
+void Settings::removeHiddenUser(const QString &usernameOrId) {
+	auto clean = usernameOrId.trimmed().toLower();
+	if (clean.startsWith('@')) {
+		clean.remove(0, 1);
+	}
+	if (clean.isEmpty()) {
+		return;
+	}
+	const auto list = _hiddenUsersRaw.split(
+		QRegularExpression(u"[\\s,;\\n]+"_q),
+		Qt::SkipEmptyParts);
+	QStringList remaining;
+	for (const auto &item : list) {
+		auto itemClean = item.trimmed().toLower();
+		if (itemClean.startsWith('@')) {
+			itemClean.remove(0, 1);
+		}
+		if (itemClean != clean) {
+			remaining.append(item.trimmed());
+		}
+	}
+	setHiddenUsersRaw(remaining.join(u"\n"_q));
+}
+
+void Settings::toggleUserHidden(const PeerData *peer) {
+	if (!peer) {
+		return;
+	}
+	if (isUserHidden(peer)) {
+		const auto bareId = QString::number(peer->id.value);
+		const auto userRawId = QString::number(peer->id.value & PeerId::kChatTypeMask);
+		const auto uname = peer->username().trimmed().toLower();
+		const auto list = _hiddenUsersRaw.split(
+			QRegularExpression(u"[\\s,;\\n]+"_q),
+			Qt::SkipEmptyParts);
+		QStringList remaining;
+		for (const auto &item : list) {
+			auto clean = item.trimmed().toLower();
+			if (clean.startsWith('@')) {
+				clean.remove(0, 1);
+			}
+			if (clean == userRawId || clean == bareId || (!uname.isEmpty() && clean == uname)) {
+				continue;
+			}
+			remaining.append(item.trimmed());
+		}
+		setHiddenUsersRaw(remaining.join(u"\n"_q));
+	} else {
+		const auto uname = peer->username().trimmed();
+		const auto identifier = !uname.isEmpty()
+			? ('@' + uname)
+			: QString::number(peer->id.value & PeerId::kChatTypeMask);
+		addHiddenUser(identifier);
+	}
+}
+
+bool Settings::isUserHidden(const PeerData *peer) const {
+	if (!_hiddenUsersEnabled || !peer || _hiddenUsers.isEmpty()) {
+		return false;
+	}
+	const auto bareId = QString::number(peer->id.value);
+	const auto userRawId = QString::number(peer->id.value & PeerId::kChatTypeMask);
+	const auto uname = peer->username().trimmed().toLower();
+
+	for (const auto &entry : _hiddenUsers) {
+		if (entry == userRawId || entry == bareId) {
+			return true;
+		}
+		if (!uname.isEmpty() && entry == uname) {
+			return true;
+		}
+		for (const auto &u : peer->usernames()) {
+			auto cleanU = u.trimmed().toLower();
+			if (cleanU.startsWith('@')) {
+				cleanU.remove(0, 1);
+			}
+			if (entry == cleanU) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+rpl::producer<bool> Settings::hiddenUsersChanges() const {
+	return _hiddenUsersChanges.events();
 }
 
 void BlurImageStrong(QImage &image) {

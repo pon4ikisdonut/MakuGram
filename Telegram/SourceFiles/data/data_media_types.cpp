@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_media_types.h"
+#include "makugram/makugram_filter.h"
 
 #include "base/random.h"
 #include "boxes/send_credits_box.h" // CreditsEmoji.
@@ -1012,7 +1013,7 @@ bool MediaPhoto::allowsEditMedia() const {
 }
 
 bool MediaPhoto::hasSpoiler() const {
-	return _spoiler;
+	return _spoiler || MakuGram::IsUserHidden(parent()->from());
 }
 
 crl::time MediaPhoto::ttlSeconds() const {
@@ -1085,7 +1086,7 @@ std::unique_ptr<HistoryView::Media> MediaPhoto::createView(
 		message,
 		realParent,
 		_photo,
-		_spoiler);
+		hasSpoiler());
 }
 
 MediaFile::MediaFile(
@@ -1428,7 +1429,7 @@ bool MediaFile::dropForwardedInfo() const {
 }
 
 bool MediaFile::hasSpoiler() const {
-	return _spoiler;
+	return _spoiler || MakuGram::IsUserHidden(parent()->from());
 }
 
 crl::time MediaFile::ttlSeconds() const {
@@ -1509,14 +1510,14 @@ std::unique_ptr<HistoryView::Media> MediaFile::createView(
 				message,
 				realParent,
 				_document,
-				_spoiler);
+				hasSpoiler());
 		}
 	} else if (_document->isAnimation() || _document->isVideoFile()) {
 		return std::make_unique<HistoryView::Gif>(
 			message,
 			realParent,
 			_document,
-			_spoiler);
+			hasSpoiler());
 	} else if (_document->isTheme() && _document->hasThumbnail()) {
 		return std::make_unique<HistoryView::ThemeDocument>(
 			message,

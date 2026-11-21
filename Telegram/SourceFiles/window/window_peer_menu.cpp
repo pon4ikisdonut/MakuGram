@@ -524,6 +524,7 @@ private:
 	void addThemeEdit();
 	void addToggleNoForwards();
 	void addBlockUser();
+	void addToggleHiddenUser();
 	void addBanFromChannel();
 	void addViewDiscussion();
 	void addDirectMessages();
@@ -1308,6 +1309,24 @@ void Filler::addBlockUser() {
 	if (user->blockStatus() == UserData::BlockStatus::Unknown) {
 		user->session().api().requestFullPeer(user);
 	}
+}
+
+void Filler::addToggleHiddenUser() {
+	const auto user = _peer->asUser();
+	if (!user
+		|| user->isInaccessible()
+		|| user->isSelf()
+		|| user->isRepliesChat()
+		|| user->isVerifyCodes()) {
+		return;
+	}
+	const auto isHidden = MakuGram::Settings::instance().isUserHidden(user);
+	const auto text = isHidden
+		? MakuGram::Tr::Get(QString::fromUtf8("Показать пользователя"), u"Unhide user"_q)
+		: MakuGram::Tr::Get(QString::fromUtf8("Скрыть пользователя"), u"Hide user"_q);
+	_addAction(text, [=] {
+		MakuGram::Settings::instance().toggleUserHidden(user);
+	}, isHidden ? &st::menuIconShowInChat : &st::menuIconSpoiler);
 }
 
 void Filler::addBanFromChannel() {
@@ -2261,6 +2280,7 @@ void Filler::fillContextMenuActions() {
 		if (!user->isContact()) {
 			addBlockUser();
 		}
+		addToggleHiddenUser();
 	}
 	addBanFromChannel();
 	addClearHistory();
@@ -2321,6 +2341,7 @@ void Filler::fillProfileActions() {
 	addToggleNoForwards();
 	addToggleFolder();
 	addBlockUser();
+	addToggleHiddenUser();
 	addBanFromChannel();
 	addReport();
 	addLeaveChat();

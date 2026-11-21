@@ -243,6 +243,71 @@ void ShowSpamFilterBox(not_null<Window::SessionController*> controller) {
 	}));
 }
 
+void ShowHiddenUsersBox(not_null<Window::SessionController*> controller) {
+	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+		box->setWidth(kBoxContentWidth);
+		box->setMaxHeight(kBoxMaxHeight);
+		box->setTitle(Tr::Value(
+			QString::fromUtf8("Скрытые пользователи"),
+			u"Hidden Users"_q));
+
+		box->addRow(
+			object_ptr<Ui::FlatLabel>(
+				box,
+				Tr::Value(
+					QString::fromUtf8(
+						"Введите юзернеймы (@username) или числовые ID пользователей через запятую или с новой строки.\n"
+						"Сообщения от этих пользователей будут отображаться с именем «Скрытый пользователь», без аватарки, а их текст и медиа будут спрятаны под спойлер (без блокировки пользователя в Telegram):"),
+					u"Enter usernames (@username) or numeric user IDs separated by commas or new lines.\n"
+					"Messages from these users will be shown with the name 'Hidden User', without avatar, and their text and media will be hidden under a spoiler (without blocking them in Telegram):"_q),
+				st::boxLabel),
+			st::boxRowPadding);
+
+		const auto field = box->addRow(
+			object_ptr<Ui::InputField>(
+				box,
+				st::supportInfoField,
+				Ui::InputField::Mode::MultiLine,
+				Tr::Value(
+					QString::fromUtf8("@username или ID (например: @durov, 12345678)..."),
+					u"@username or ID (e.g.: @durov, 12345678)..."_q),
+				MakuGram::Settings::instance().hiddenUsersRaw()),
+			st::boxRowPadding);
+		field->setFocus();
+		field->setMinHeight(130);
+
+		const auto enableToggle = box->addRow(
+			object_ptr<Ui::Checkbox>(
+				box,
+				Tr::Value(
+					QString::fromUtf8("Включить скрытие сообщений указанных пользователей"),
+					u"Enable hiding messages from specified users"_q),
+				MakuGram::Settings::instance().hiddenUsersEnabled(),
+				st::defaultBoxCheckbox),
+			style::margins(
+				st::boxRowPadding.left(),
+				st::boxMediumSkip,
+				st::boxRowPadding.right(),
+				2),
+			style::al_justify);
+		enableToggle->setCursor(style::cur_pointer);
+		enableToggle->setAllowTextLines(0);
+		enableToggle->setCheckAlignment(style::al_topleft);
+
+		box->addButton(tr::lng_settings_save(), [=] {
+			MakuGram::Settings::instance().setHiddenUsersEnabled(enableToggle->checked());
+			MakuGram::Settings::instance().setHiddenUsersRaw(field->getLastText());
+			box->closeBox();
+			controller->showToast(Tr::Get(
+				QString::fromUtf8("Настройки сохранены"),
+				u"Settings saved"_q));
+		});
+		box->addButton(tr::lng_cancel(), [=] {
+			box->closeBox();
+		});
+	}));
+}
+
 void ShowMessagesBox(not_null<Window::SessionController*> controller) {
 	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setWidth(kBoxContentWidth);
@@ -480,6 +545,36 @@ void ShowPrivacyBox(not_null<Window::SessionController*> controller) {
 			Tr::Value(
 				QString::fromUtf8("Не отображать сообщения заблокированных пользователей в общих чатах и группах."),
 				u"Do not display messages from blocked users in public and group chats."_q));
+
+		AddCheckboxRow(
+			box,
+			Tr::Value(
+				QString::fromUtf8("Скрытие сообщений определенных пользователей"),
+				u"Hide messages from specific users"_q),
+			MakuGram::Settings::instance().hiddenUsersEnabled(),
+			[=](bool checked) {
+				MakuGram::Settings::instance().setHiddenUsersEnabled(checked);
+			},
+			Tr::Value(
+				QString::fromUtf8("Скрывает никнейм («Скрытый пользователь»), аватарку и прячет текст/медиа под спойлер для пользователей из списка (без блокировки в Telegram)."),
+				u"Hides nickname ('Hidden User'), avatar, and puts text/media under spoiler for users from the list (without blocking them in Telegram)."_q),
+			0);
+
+		const auto hiddenUsersBtn = box->addRow(
+			object_ptr<Ui::RoundButton>(
+				box,
+				Tr::Value(
+					QString::fromUtf8("Настроить скрытых пользователей..."),
+					u"Configure hidden users..."_q),
+				st::defaultBoxButton),
+			style::margins(
+				st::boxRowPadding.left(),
+				9,
+				st::boxRowPadding.right(),
+				st::boxMediumSkip));
+		hiddenUsersBtn->setClickedCallback([=] {
+			ShowHiddenUsersBox(controller);
+		});
 
 		AddCheckboxRow(
 			box,
@@ -1030,7 +1125,7 @@ void BuildMakuGramSection(SectionBuilder &builder) {
 		.title = Tr::Value(QString::fromUtf8("Приватность и безопасность"), u"Privacy & Security"_q),
 		.icon = { &st::menuIconLock },
 		.onClick = [=] { ShowPrivacyBox(controller); },
-		.keywords = { u"privacy"_q, u"ghost"_q, u"offline"_q, u"typing"_q, u"copy"_q, u"delete"_q, u"phone"_q, u"blocked"_q, u"приватность"_q, u"призрак"_q, u"невидимка"_q, u"офлайн"_q, u"тайпинг"_q, u"копирование"_q, u"удаление"_q, u"телефон"_q, u"номер"_q, u"блок"_q },
+		.keywords = { u"privacy"_q, u"ghost"_q, u"offline"_q, u"typing"_q, u"copy"_q, u"delete"_q, u"phone"_q, u"blocked"_q, u"hidden"_q, u"spoiler"_q, u"приватность"_q, u"призрак"_q, u"невидимка"_q, u"офлайн"_q, u"тайпинг"_q, u"копирование"_q, u"удаление"_q, u"телефон"_q, u"номер"_q, u"блок"_q, u"скрытые"_q, u"спойлер"_q },
 	});
 
 	builder.addButton({

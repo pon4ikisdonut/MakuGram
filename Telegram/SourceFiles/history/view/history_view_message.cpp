@@ -1619,7 +1619,8 @@ QSize Message::performCountOptimalSize() {
 				const auto &name = from
 					? _fromName
 					: item->displayHiddenSenderInfo()->nameText();
-				const auto isNewbie = MakuGram::Settings::instance().showNewbieBadge()
+				const auto isNewbie = !MakuGram::Settings::instance().isUserHidden(from)
+					&& MakuGram::Settings::instance().showNewbieBadge()
 					&& from
 					&& from->isUser()
 					&& MakuGram::IsNewbieInChat(history()->peer, from->asUser());
@@ -2597,7 +2598,8 @@ void Message::paintFromName(
 		}
 		return &info->nameText();
 	}();
-	const auto isNewbie = MakuGram::Settings::instance().showNewbieBadge()
+	const auto isNewbie = !MakuGram::Settings::instance().isUserHidden(from)
+		&& MakuGram::Settings::instance().showNewbieBadge()
 		&& from
 		&& from->isUser()
 		&& MakuGram::IsNewbieInChat(history()->peer, from->asUser());
@@ -4355,7 +4357,8 @@ bool Message::getStateFromName(
 			}
 		}();
 
-		const auto isNewbie = MakuGram::Settings::instance().showNewbieBadge()
+		const auto isNewbie = !MakuGram::Settings::instance().isUserHidden(from)
+			&& MakuGram::Settings::instance().showNewbieBadge()
 			&& from
 			&& from->isUser()
 			&& MakuGram::IsNewbieInChat(history()->peer, from->asUser());
@@ -4408,10 +4411,13 @@ bool Message::getStateFromName(
 		if (point.x() >= availableLeft
 			&& point.x() < availableLeft + availableWidth
 			&& point.x() < availableLeft + nameWidth) {
-			outResult->link = fromLink();
-			recordLinkRipplePoint(point, trect.topLeft());
-			_fromLinkRipplePointSet = 1;
-			return true;
+			if (!MakuGram::Settings::instance().isUserHidden(from)) {
+				outResult->link = fromLink();
+				recordLinkRipplePoint(point, trect.topLeft());
+				_fromLinkRipplePointSet = 1;
+				return true;
+			}
+			return false;
 		}
 
 		const auto skipWidth = nameWidth
@@ -5598,6 +5604,18 @@ void Message::validateFromNameText(PeerData *from) const {
 		clearStatus();
 		return;
 	}
+	if (MakuGram::Settings::instance().isUserHidden(from)) {
+		const auto hiddenName = MakuGram::Tr::Get(
+			QString::fromUtf8("Скрытый пользователь"),
+			u"Hidden User"_q);
+		_fromName.setText(
+			st::msgNameStyle,
+			hiddenName,
+			Ui::NameTextOptions());
+		_fromNameVersion = 0;
+		clearStatus();
+		return;
+	}
 	const auto version = from->nameVersion();
 	if (_fromNameVersion < version) {
 		_fromNameVersion = version;
@@ -6515,7 +6533,8 @@ void Message::fromNameUpdated(int width) const {
 	if (!via && !guestChat) {
 		return;
 	}
-	const auto isNewbie = MakuGram::Settings::instance().showNewbieBadge()
+	const auto isNewbie = !MakuGram::Settings::instance().isUserHidden(from)
+		&& MakuGram::Settings::instance().showNewbieBadge()
 		&& from
 		&& from->isUser()
 		&& MakuGram::IsNewbieInChat(history()->peer, from->asUser());

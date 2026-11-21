@@ -7,10 +7,12 @@ a custom Telegram Desktop client fork.
 #include "rpl/event_stream.h"
 #include "rpl/producer.h"
 #include <QtCore/QString>
+#include <QtCore/QStringList>
 #include <QtCore/QRegularExpression>
 #include <vector>
 
 class QImage;
+class PeerData;
 
 namespace MakuGram {
 
@@ -197,6 +199,19 @@ public:
 	void setTgWsProxyWorker(const QString &worker);
 	[[nodiscard]] rpl::producer<QString> tgWsProxyWorkerChanges() const;
 
+	[[nodiscard]] bool hiddenUsersEnabled() const;
+	void setHiddenUsersEnabled(bool enabled);
+	[[nodiscard]] rpl::producer<bool> hiddenUsersEnabledChanges() const;
+
+	[[nodiscard]] QString hiddenUsersRaw() const;
+	void setHiddenUsersRaw(const QString &raw);
+	[[nodiscard]] QStringList hiddenUsersList() const;
+	void addHiddenUser(const QString &usernameOrId);
+	void removeHiddenUser(const QString &usernameOrId);
+	void toggleUserHidden(const PeerData *peer);
+	[[nodiscard]] bool isUserHidden(const PeerData *peer) const;
+	[[nodiscard]] rpl::producer<bool> hiddenUsersChanges() const;
+
 private:
 	Settings();
 	~Settings() = default;
@@ -205,6 +220,7 @@ private:
 	Settings &operator=(const Settings &) = delete;
 
 	void parseSpamKeywords();
+	void parseHiddenUsers();
 
 	bool _hideMessagesFromBlocked = false;
 	bool _quickBanInRequests = false;
@@ -246,6 +262,9 @@ private:
 	bool _tgWsProxyEnabled = false;
 	int _tgWsProxyPort = 1443;
 	QString _tgWsProxyWorker;
+	bool _hiddenUsersEnabled = true;
+	QString _hiddenUsersRaw;
+	QStringList _hiddenUsers;
 
 	rpl::event_stream<bool> _hideMessagesFromBlockedChanges;
 	rpl::event_stream<bool> _quickBanInRequestsChanges;
@@ -285,6 +304,8 @@ private:
 	rpl::event_stream<bool> _tgWsProxyEnabledChanges;
 	rpl::event_stream<int> _tgWsProxyPortChanges;
 	rpl::event_stream<QString> _tgWsProxyWorkerChanges;
+	rpl::event_stream<bool> _hiddenUsersEnabledChanges;
+	rpl::event_stream<bool> _hiddenUsersChanges;
 };
 
 } // namespace MakuGram

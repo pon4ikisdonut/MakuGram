@@ -732,6 +732,8 @@ ListWidget::ListWidget(
 		MakuGram::Settings::instance().spamKeywordsChanges()
 			| rpl::to_empty,
 		MakuGram::Settings::instance().streamerModeChanges()
+			| rpl::to_empty,
+		MakuGram::Settings::instance().hiddenUsersChanges()
 			| rpl::to_empty
 	) | rpl::on_next([=] {
 		crl::on_main(this, [=] {
@@ -3734,16 +3736,18 @@ void ListWidget::paintUserpics(
 						st::msgPhotoSize));
 			}
 			if (const auto from = view->displayFrom()) {
-				Dialogs::Ui::PaintUserpic(
-					p,
-					from,
-					validateVideoUserpic(from),
-					_userpics[from],
-					st::historyPhotoLeft,
-					userpicTop,
-					view->width(),
-					st::msgPhotoSize,
-					context.paused);
+				if (!MakuGram::IsUserHidden(from)) {
+					Dialogs::Ui::PaintUserpic(
+						p,
+						from,
+						validateVideoUserpic(from),
+						_userpics[from],
+						st::historyPhotoLeft,
+						userpicTop,
+						view->width(),
+						st::msgPhotoSize,
+						context.paused);
+				}
 			} else if (const auto info = item->displayHiddenSenderInfo()) {
 				if (info->customUserpic.empty()) {
 					info->emptyUserpic.paintCircle(

@@ -181,4 +181,8 @@ bool IsSearchMessageHidden(const HistoryItem *item) {
 	return false;
 }
 
+bool IsUserHidden(const PeerData *peer) {
+	return Settings::instance().isUserHidden(peer);
+}
+
 } // namespace MakuGram

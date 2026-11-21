@@ -7,7 +7,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_context_menu.h"
 
+#include "makugram/makugram_filter.h"
 #include "makugram/makugram_lang.h"
+#include "makugram/makugram_settings.h"
 #include "api/api_attached_stickers.h"
 #include "api/api_editing.h"
 #include "api/api_global_privacy.h"
@@ -1341,6 +1343,30 @@ void AddBlockSenderAction(
 	}), &st::menuIconBlock);
 }
 
+void AddToggleHiddenUserAction(
+		not_null<Ui::PopupMenu*> menu,
+		const ContextMenuRequest &request,
+		not_null<ListWidget*> list) {
+	if (!request.selectedItems.empty()) {
+		return;
+	}
+	const auto item = request.item;
+	if (!item || item->isService()) {
+		return;
+	}
+	const auto from = item->from();
+	if (!from || !from->isUser() || from->isSelf()) {
+		return;
+	}
+	const auto isHidden = MakuGram::Settings::instance().isUserHidden(from);
+	const auto title = isHidden
+		? MakuGram::Tr::Get(QString::fromUtf8("Показать пользователя"), u"Unhide user"_q)
+		: MakuGram::Tr::Get(QString::fromUtf8("Скрыть пользователя"), u"Hide user"_q);
+	menu->addAction(title, [=] {
+		MakuGram::Settings::instance().toggleUserHidden(from);
+	}, isHidden ? &st::menuIconShowInChat : &st::menuIconSpoiler);
+}
+
 bool AddClearSelectionAction(
 		not_null<Ui::PopupMenu*> menu,
 		const ContextMenuRequest &request,
@@ -1455,6 +1481,7 @@ void AddMessageActions(
 	AddSaveRichHtmlAction(menu, request, list);
 	AddReportAction(menu, request, list);
 	AddBlockSenderAction(menu, request, list);
+	AddToggleHiddenUserAction(menu, request, list);
 	if (request.item && request.selectedItems.empty()) {
 		AddEphemeralMessageActions(
 			menu,
