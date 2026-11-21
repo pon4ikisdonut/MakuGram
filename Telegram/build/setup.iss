@@ -1,7 +1,7 @@
-#define MyAppShortName "Telegram"
-#define MyAppName "Telegram Desktop"
-#define MyAppPublisher "Telegram FZ-LLC"
-#define MyAppURL "https://desktop.telegram.org"
+#define MyAppShortName "MakuGram"
+#define MyAppName "MakuGram"
+#define MyAppPublisher "MakuGram"
+#define MyAppURL "https://github.com/pon4ikisdonut/MakuGram"
 #define MyAppExeName "Telegram.exe"
 #define MyAppId "53F49750-6209-4FBF-9CA8-7A333C87D1ED"
 #define CurrentYear GetDateTimeString('yyyy','','')
@@ -34,7 +34,9 @@ CloseApplications=force
 DisableDirPage=no
 DisableProgramGroupPage=no
 WizardStyle=modern
-SignTool=sha256
+#ifdef MySignTool
+SignTool={#MySignTool}
+#endif
 
 #ifndef MyOutputBaseFilename
   #if MyBuildTarget == "winarm"
@@ -79,9 +81,10 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "{#ReleasePath}\Telegram.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#ReleasePath}\Updater.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ReleasePath}\Updater.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#ReleasePath}\modules\*"; DestDir: "{app}\modules"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 #if MyBuildTarget != "winarm"
-Source: "{#ReleasePath}\{#ModulesFolder}\d3d\d3dcompiler_47.dll"; DestDir: "{app}\{#ModulesFolder}\d3d"; Flags: ignoreversion
+Source: "{#ReleasePath}\{#ModulesFolder}\d3d\d3dcompiler_47.dll"; DestDir: "{app}\{#ModulesFolder}\d3d"; Flags: ignoreversion skipifsourcedoesntexist
 #endif
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 

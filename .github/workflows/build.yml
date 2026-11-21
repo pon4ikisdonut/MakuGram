@@ -231,11 +231,58 @@ jobs:
           New-Item -ItemType Directory -Force -Path "artifact" | Out-Null
           Compress-Archive -Path "$stage\*" -DestinationPath "artifact\MakuGram-win-x64.zip" -Force
 
+          # Locate or install Inno Setup compiler (ISCC)
+          $iscc = (Get-Command iscc.exe -ErrorAction SilentlyContinue)?.Source
+          if (-not $iscc) {
+            $candidates = @(
+              "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+              "C:\Program Files\Inno Setup 6\ISCC.exe",
+              "C:\Program Files (x86)\Inno Setup 5\ISCC.exe"
+            )
+            foreach ($c in $candidates) {
+              if (Test-Path $c) { $iscc = $c; break }
+            }
+          }
+          if (-not $iscc) {
+            Write-Host "Installing Inno Setup via choco..."
+            choco install innosetup --yes --no-progress
+            $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          }
+
+          # Read version from Telegram/build/version
+          $versionFile = "$env:TBUILD\$env:REPO_NAME\Telegram\build\version"
+          $appVersion = "7.4.1"
+          if (Test-Path $versionFile) {
+            $match = Get-Content $versionFile | Select-String "AppVersionStr\s+([0-9.]+)"
+            if ($match) { $appVersion = $match.Matches[0].Groups[1].Value.Trim() }
+          }
+          Write-Host "Compiling Inno Setup installer for version $appVersion with $iscc..."
+          $issFile = "$env:TBUILD\$env:REPO_NAME\Telegram\build\setup.iss"
+          & $iscc "/dMyAppVersion=$appVersion" "/dMyAppVersionZero=$appVersion" "/dMyAppVersionFull=$appVersion" "/dReleasePath=$out" "/dMyBuildTarget=win64" "/dMyOutputBaseFilename=MakuGram-Setup-x64" $issFile
+          if ($LASTEXITCODE -ne 0) {
+            throw "ISCC failed with exit code $LASTEXITCODE"
+          }
+
+          $installer = Join-Path $out "MakuGram-Setup-x64.exe"
+          if (Test-Path $installer) {
+            Copy-Item $installer "artifact\MakuGram-Setup-x64.exe" -Force
+            Write-Host "Installer created: artifact\MakuGram-Setup-x64.exe"
+          } else {
+            throw "Installer not found at $installer"
+          }
+
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: MakuGram-win-x64
-          path: artifact/MakuGram-win-x64.zip
+          path: artifact/*
+          retention-days: 30
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: MakuGram-Setup-x64
+          path: artifact/MakuGram-Setup-x64.exe
           retention-days: 30
 
   linux:
