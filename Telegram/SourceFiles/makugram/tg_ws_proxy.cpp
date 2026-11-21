@@ -8,7 +8,10 @@ a custom Telegram Desktop client fork.
 #include "core/websocket_client.h"
 #include "core/application.h"
 #include "core/core_settings.h"
+#include "core/core_settings_proxy.h"
+#include "mtproto/mtproto_proxy_data.h"
 #include "base/random.h"
+#include <crl/crl_on_main.h>
 
 #include <QtCore/QSettings>
 #include <QtCore/QtEndian>
@@ -158,12 +161,14 @@ void TgWsProxy::onNewConnection() {
 }
 
 void TgWsProxy::removeBridge(TgWsProxyBridge *bridge) {
-	for (auto it = _bridges.begin(); it != _bridges.end(); ++it) {
-		if (it->get() == bridge) {
-			_bridges.erase(it);
-			break;
+	crl::on_main([this, bridge] {
+		for (auto it = _bridges.begin(); it != _bridges.end(); ++it) {
+			if (it->get() == bridge) {
+				_bridges.erase(it);
+				break;
+			}
 		}
-	}
+	});
 }
 
 QString TgWsProxy::selectHostForDc(int dc) {
@@ -234,8 +239,7 @@ void TgWsProxy::updateDomainsFromGitHub(std::function<void(bool success, int cou
 }
 
 void TgWsProxy::applyToProxySettings(bool enabled) {
-	auto &settings = Core::App().settings();
-	auto proxy = settings.proxy();
+	auto &proxy = Core::App().settings().proxy();
 	auto list = proxy.list();
 	const auto localHost = u"127.0.0.1"_q;
 	const auto localPort = uint32(port());
@@ -269,7 +273,6 @@ void TgWsProxy::applyToProxySettings(bool enabled) {
 		}
 		stop();
 	}
-	settings.setProxy(proxy);
 	Core::App().saveSettingsDelayed();
 }
 

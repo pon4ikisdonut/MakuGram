@@ -605,7 +605,7 @@ jobs:
           retention-days: 30
 
   release:
-    if: github.repository == 'pon4ikisdonut/MakuGram' && github.event_name == 'push' && github.ref == 'refs/heads/makugram'
+    if: github.repository == 'pon4ikisdonut/MakuGram' && github.event_name == 'push' && github.ref == 'refs/heads/makugram' && !cancelled() && !contains(needs.*.result, 'cancelled') && (needs.windows.result == 'success' || needs.linux.result == 'success' || needs.macos.result == 'success')
     name: Publish GitHub Release
     needs: [windows, linux, macos]
     runs-on: ubuntu-latest

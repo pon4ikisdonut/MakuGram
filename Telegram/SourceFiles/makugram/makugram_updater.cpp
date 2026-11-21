@@ -3,6 +3,7 @@ This file is part of MakuGram,
 a custom Telegram Desktop client fork.
 */
 #include "makugram/makugram_updater.h"
+#include "makugram/makugram_settings.h"
 #include "makugram/makugram_lang.h"
 #include "settings.h"
 #include "core/application.h"
