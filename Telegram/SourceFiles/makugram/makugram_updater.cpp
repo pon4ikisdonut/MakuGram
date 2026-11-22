@@ -31,6 +31,11 @@ a custom Telegram Desktop client fork.
 #include <QtNetwork/QNetworkRequest>
 #include <QtNetwork/QNetworkReply>
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <shellapi.h>
+#endif
+
 namespace MakuGram {
 
 void CleanOldUpdateFiles() {
@@ -90,69 +95,98 @@ bool ApplyUpdateAndRestart(const QString &newExePath, QString *outError = nullpt
 	const auto oldExe = currentExe + u".old"_q;
 
 	// 1. Remove previous .old if exists
-	if (QFile::exists(oldExe)) {
-		if (!QFile::remove(oldExe)) {
-			if (outError) {
-				*outError = Tr::Get(
-					u"Не удалось удалить старую резервную копию MakuGram.exe.old."_q,
-					u"Failed to delete old backup file MakuGram.exe.old."_q);
-			}
-			return false;
-		}
-	}
-
-	// 2. Rename running exe to .old (allowed on Windows)
-	if (!QFile::rename(currentExe, oldExe)) {
-		if (outError) {
-			*outError = Tr::Get(
-				u"Не удалось переименовать текущий MakuGram.exe (нет прав доступа)."_q,
-				u"Failed to rename current MakuGram.exe (access denied)."_q);
-		}
-		return false;
-	}
-
-	// 3. Move/Copy new exe to original spot
-	bool placed = false;
-	if (QFile::rename(newExePath, currentExe)) {
-		placed = true;
-	} else if (QFile::copy(newExePath, currentExe)) {
-		placed = true;
-	}
-
-	if (!placed) {
-		// Rollback immediately!
-		QFile::rename(oldExe, currentExe);
-		if (outError) {
-			*outError = Tr::Get(
-				u"Не удалось разместить новый MakuGram.exe. Исходный файл восстановлен."_q,
-				u"Failed to place new MakuGram.exe. Original file restored."_q);
-		}
-		return false;
-	}
-
-	// 4. Clean update directory
-	const auto updateDir = cWorkingDir() + u"tupdates/makugram"_q;
-	QDir(updateDir).removeRecursively();
-
 #ifdef Q_OS_WIN
-	// 5. Schedule background retry loop to delete .old file as soon as this process exits and releases lock
-	const auto nativeOld = QDir::toNativeSeparators(oldExe);
-	QProcess::startDetached(
-		u"powershell.exe"_q,
-		{
-			u"-NonInteractive"_q,
-			u"-WindowStyle"_q,
-			u"Hidden"_q,
-			u"-Command"_q,
-			QString("for ($i=0; $i -lt 30; $i++) { Start-Sleep -Seconds 1; if (!(Test-Path -LiteralPath '%1')) { break }; Remove-Item -LiteralPath '%1' -Force -ErrorAction SilentlyContinue; if (!(Test-Path -LiteralPath '%1')) { break } }").arg(nativeOld),
-		});
+	SetFileAttributesW(reinterpret_cast<const wchar_t*>(currentExe.utf16()), FILE_ATTRIBUTE_NORMAL);
+	if (QFile::exists(oldExe)) {
+		SetFileAttributesW(reinterpret_cast<const wchar_t*>(oldExe.utf16()), FILE_ATTRIBUTE_NORMAL);
+		QFile::remove(oldExe);
+	}
+#else
+	if (QFile::exists(oldExe)) {
+		QFile::remove(oldExe);
+	}
 #endif
 
-	// 6. Trigger restart cleanly!
-	cSetRestarting(true);
-	cSetRestartingToSettings(false);
-	Core::Quit();
-	return true;
+	// 2. Try direct rename (succeeds in portable / writable folders)
+	if (QFile::rename(currentExe, oldExe)) {
+		bool placed = false;
+		if (QFile::rename(newExePath, currentExe)) {
+			placed = true;
+		} else if (QFile::copy(newExePath, currentExe)) {
+			placed = true;
+		}
+
+		if (placed) {
+			const auto updateDir = cWorkingDir() + u"tupdates/makugram"_q;
+			QDir(updateDir).removeRecursively();
+
+#ifdef Q_OS_WIN
+			const auto nativeOld = QDir::toNativeSeparators(oldExe);
+			QProcess::startDetached(
+				u"powershell.exe"_q,
+				{
+					u"-NonInteractive"_q,
+					u"-WindowStyle"_q,
+					u"Hidden"_q,
+					u"-Command"_q,
+					QString("for ($i=0; $i -lt 30; $i++) { Start-Sleep -Seconds 1; if (!(Test-Path -LiteralPath '%1')) { break }; Remove-Item -LiteralPath '%1' -Force -ErrorAction SilentlyContinue; if (!(Test-Path -LiteralPath '%1')) { break } }").arg(nativeOld),
+				});
+#endif
+			cSetRestarting(true);
+			cSetRestartingToSettings(false);
+			Core::Quit();
+			return true;
+		} else {
+			QFile::rename(oldExe, currentExe);
+		}
+	}
+
+#ifdef Q_OS_WIN
+	// 3. Fallback: if running from Program Files without admin rights, elevate via UAC PowerShell
+	const auto nativeCurrent = QDir::toNativeSeparators(currentExe);
+	const auto nativeOld = QDir::toNativeSeparators(oldExe);
+	const auto nativeNew = QDir::toNativeSeparators(newExePath);
+	const auto exeNameWithoutExt = QFileInfo(currentExe).baseName();
+
+	const auto script = QString(
+		"Start-Sleep -Milliseconds 1200; "
+		"Stop-Process -Name '%1' -Force -ErrorAction SilentlyContinue; "
+		"if (Test-Path -LiteralPath '%3') { Remove-Item -LiteralPath '%3' -Force -ErrorAction SilentlyContinue }; "
+		"Move-Item -LiteralPath '%2' -Destination '%3' -Force; "
+		"Move-Item -LiteralPath '%4' -Destination '%2' -Force; "
+		"Start-Process -FilePath '%2'")
+		.arg(exeNameWithoutExt)
+		.arg(nativeCurrent)
+		.arg(nativeOld)
+		.arg(nativeNew);
+
+	const auto utf16 = script.toStdWString();
+	const auto bytes = QByteArray(reinterpret_cast<const char*>(utf16.data()), int(utf16.size() * sizeof(wchar_t)));
+	const auto encodedScript = QString::fromLatin1(bytes.toBase64());
+	const auto args = QString("-NoProfile -WindowStyle Hidden -EncodedCommand %1").arg(encodedScript);
+
+	const auto res = ShellExecuteW(
+		nullptr,
+		L"runas",
+		L"powershell.exe",
+		reinterpret_cast<const wchar_t*>(args.utf16()),
+		nullptr,
+		SW_HIDE);
+
+	if (reinterpret_cast<INT_PTR>(res) > 32) {
+		cSetRestarting(true);
+		cSetRestartingToSettings(false);
+		Core::Quit();
+		return true;
+	}
+#endif
+
+	if (outError) {
+		*outError = Tr::Get(
+			u"Не удалось обновить MakuGramR.exe (нет прав доступа)."_q,
+			u"Failed to update MakuGramR.exe (access denied)."_q);
+	}
+	return false;
 }
 
 struct DownloadSession {
@@ -250,23 +284,44 @@ public:
 			info.htmlUrl = obj.value(u"html_url"_q).toString();
 			info.body = obj.value(u"body"_q).toString();
 
-			// Find best asset: .exe first, then .zip
 			const auto assets = obj.value(u"assets"_q).toArray();
+
+			// 1. Prefer portable .zip (contains clean MakuGram.exe for seamless in-place update)
 			for (const auto &val : assets) {
 				const auto a = val.toObject();
 				const auto aName = a.value(u"name"_q).toString();
-				if (aName.endsWith(u".exe"_q, Qt::CaseInsensitive)) {
+				if (aName.endsWith(u".zip"_q, Qt::CaseInsensitive)
+					&& !aName.contains(u"setup"_q, Qt::CaseInsensitive)
+					&& !aName.contains(u"installer"_q, Qt::CaseInsensitive)) {
 					info.asset.name = aName;
 					info.asset.url = a.value(u"browser_download_url"_q).toString();
 					info.asset.size = a.value(u"size"_q).toVariant().toLongLong();
 					break;
 				}
 			}
+
+			// 2. Fallback: any .zip
 			if (info.asset.url.isEmpty()) {
 				for (const auto &val : assets) {
 					const auto a = val.toObject();
 					const auto aName = a.value(u"name"_q).toString();
 					if (aName.endsWith(u".zip"_q, Qt::CaseInsensitive)) {
+						info.asset.name = aName;
+						info.asset.url = a.value(u"browser_download_url"_q).toString();
+						info.asset.size = a.value(u"size"_q).toVariant().toLongLong();
+						break;
+					}
+				}
+			}
+
+			// 3. Fallback: direct MakuGram.exe (NEVER setup or installer!)
+			if (info.asset.url.isEmpty()) {
+				for (const auto &val : assets) {
+					const auto a = val.toObject();
+					const auto aName = a.value(u"name"_q).toString();
+					if (aName.endsWith(u".exe"_q, Qt::CaseInsensitive)
+						&& !aName.contains(u"setup"_q, Qt::CaseInsensitive)
+						&& !aName.contains(u"installer"_q, Qt::CaseInsensitive)) {
 						info.asset.name = aName;
 						info.asset.url = a.value(u"browser_download_url"_q).toString();
 						info.asset.size = a.value(u"size"_q).toVariant().toLongLong();
@@ -387,7 +442,7 @@ private:
 					// Fallback to browser if no direct download asset found
 					if (release.asset.url.isEmpty()) {
 						UrlClickHandler::Open(release.htmlUrl.isEmpty()
-							? u"https://github.com/MarkAdderly/MakuGram/releases/latest"_q
+							? u"https://github.com/%1/releases/latest"_q.arg(kGitHubRepo)
 							: release.htmlUrl);
 						box->closeBox();
 						return;
@@ -558,11 +613,21 @@ private:
 								return;
 							}
 
-							// Search for MakuGram.exe or any .exe
+							// Search for matching executable in extracted archive
 							QDirIterator it(extractDir, { u"*.exe"_q }, QDir::Files, QDirIterator::Subdirectories);
 							while (it.hasNext()) {
 								const auto found = it.next();
-								if (found.endsWith(u"MakuGram.exe"_q, Qt::CaseInsensitive)) {
+								const auto fn = QFileInfo(found).fileName();
+								if (fn.contains(u"setup"_q, Qt::CaseInsensitive)
+									|| fn.contains(u"installer"_q, Qt::CaseInsensitive)) {
+									continue;
+								}
+								if (fn.compare(cExeName(), Qt::CaseInsensitive) == 0) {
+									newExePath = found;
+									break;
+								} else if (fn.compare(u"Telegram.exe"_q, Qt::CaseInsensitive) == 0
+									|| fn.compare(u"MakuGram.exe"_q, Qt::CaseInsensitive)
+									|| fn.compare(u"MakuGramR.exe"_q, Qt::CaseInsensitive)) {
 									newExePath = found;
 									break;
 								} else if (newExePath.isEmpty()) {
@@ -573,8 +638,8 @@ private:
 							if (newExePath.isEmpty() || QFileInfo(newExePath).size() < 10 * 1024 * 1024) {
 								if (lbl) {
 									lbl->setText(Tr::Get(
-										u"Ошибка: MakuGram.exe не найден в распакованном архиве."_q,
-										u"Error: MakuGram.exe not found in extracted archive."_q));
+										u"Ошибка: исполняемый файл приложения не найден в распакованном архиве."_q,
+										u"Error: application executable not found in extracted archive."_q));
 								}
 								if (b) {
 									b->setEnabled(true);
@@ -591,8 +656,8 @@ private:
 
 						if (lbl) {
 							lbl->setText(Tr::Get(
-								u"Обновление загружено и готово к установке!\nНажмите кнопку ниже для перезапуска MakuGram."_q,
-								u"Update downloaded and ready to install!\nClick the button below to restart MakuGram."_q));
+								u"Обновление загружено и готово к установке!\nНажмите кнопку ниже для перезапуска MakuGramR."_q,
+								u"Update downloaded and ready to install!\nClick the button below to restart MakuGramR."_q));
 						}
 						if (b) {
 							b->setEnabled(true);
@@ -612,7 +677,7 @@ private:
 
 			box->addLeftButton(Tr::Value(u"Открыть в GitHub"_q, u"Open on GitHub"_q), [=] {
 				UrlClickHandler::Open(release.htmlUrl.isEmpty()
-					? u"https://github.com/MarkAdderly/MakuGram/releases/latest"_q
+					? u"https://github.com/%1/releases/latest"_q.arg(kGitHubRepo)
 					: release.htmlUrl);
 			});
 
