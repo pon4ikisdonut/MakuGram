@@ -636,6 +636,7 @@ private:
 	PhotoId _userpicPhotoId = kUnknownPhotoId;
 
 	mutable std::unique_ptr<Ui::EmptyUserpic> _userpicEmpty;
+	mutable bool _userpicEmptyInaccessible = false;
 
 	Data::PeerNotifySettings _notify;
 

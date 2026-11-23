@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_user.h"
 #include "makugram/makugram_settings.h"
+#include "makugram/makugram_filter.h"
 
 #include "api/api_credits.h"
 #include "api/api_global_privacy.h"
@@ -768,10 +769,16 @@ bool UserData::canShareThisContactFast() const {
 }
 
 QString UserData::username() const {
+	if (MakuGram::IsUserHidden(this)) {
+		return QString();
+	}
 	return _username.username();
 }
 
 QString UserData::editableUsername() const {
+	if (MakuGram::IsUserHidden(this)) {
+		return QString();
+	}
 	return _username.editableUsername();
 }
 

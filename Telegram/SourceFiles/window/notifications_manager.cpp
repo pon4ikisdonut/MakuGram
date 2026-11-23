@@ -39,6 +39,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_reactions_notify_settings.h"
 #include "api/api_updates.h"
 #include "apiwrap.h"
+#include "makugram/makugram_filter.h"
+#include "makugram/makugram_settings.h"
 #include "main/main_account.h"
 #include "main/main_domain.h"
 #include "main/main_session.h"
@@ -358,6 +360,13 @@ System::SkipState System::computeSkipState(
 	const auto notifyBy = messageType
 		? item->specialNotificationPeer()
 		: notification.reactionOrVoteSender;
+	if (MakuGram::IsUserHidden(item->from())
+		|| MakuGram::IsUserHidden(item->author())
+		|| MakuGram::IsUserHidden(item->history()->peer)
+		|| MakuGram::IsUserHidden(notifyBy)
+		|| MakuGram::IsUserHidden(notification.reactionOrVoteSender)) {
+		return { SkipState::Skip };
+	}
 	if (Core::Quitting()) {
 		return { SkipState::Skip };
 	} else if (!Core::App().settings().notifyFromAll()
@@ -831,6 +840,10 @@ void System::showNext() {
 		while (!i->second.empty() && i->second.begin()->first <= ms) {
 			const auto thread = i->first;
 			const auto from = i->second.begin()->second.notifyBy;
+			if (MakuGram::IsUserHidden(from)) {
+				i->second.erase(i->second.begin());
+				continue;
+			}
 			if (const auto soundId = MaybeSoundFor(thread, from)) {
 				alertThread = thread;
 				alertSoundId = soundId;
@@ -943,6 +956,13 @@ void System::showNext() {
 			break;
 		}
 		const auto notifyItem = notify->item;
+		if (MakuGram::IsUserHidden(notifyItem->from())
+			|| MakuGram::IsUserHidden(notifyItem->author())
+			|| MakuGram::IsUserHidden(notifyItem->history()->peer)
+			|| MakuGram::IsUserHidden(notify->reactionOrVoteSender)) {
+			not_null(notifyThread)->skipNotification();
+			continue;
+		}
 		const auto notifySilent = computeSkipState(*notify).silent;
 		const auto messageType = (notify->type
 			== Data::ItemNotificationType::Message);

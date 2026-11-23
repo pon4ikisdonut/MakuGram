@@ -3362,8 +3362,8 @@ QString HistoryItem::notificationHeader() const {
 	} else if (out() && isFromScheduled() && !_history->peer->isSelf()) {
 		return tr::lng_from_you(tr::now);
 	} else if (!_history->peer->isUser() && !isPostHidingAuthor()) {
-		if (MakuGram::IsUserHidden(from())) {
-			return MakuGram::Tr::Get(QString::fromUtf8("Скрытый пользователь"), u"Hidden User"_q);
+		if (MakuGram::IsUserHidden(from()) || MakuGram::IsUserHidden(author())) {
+			return MakuGram::HiddenUserName();
 		}
 		return from()->name();
 	}
@@ -4266,7 +4266,9 @@ TextWithEntities HistoryItem::translatedTextWithLocalEntities() const {
 		}
 	}
 
-	if (MakuGram::IsUserHidden(from())) {
+	if (MakuGram::IsUserHidden(from())
+		|| MakuGram::IsUserHidden(author())
+		|| MakuGram::IsUserHidden(history()->peer)) {
 		if (!result.text.isEmpty()) {
 			result.entities.clear();
 			result.entities.push_back({
@@ -4275,6 +4277,8 @@ TextWithEntities HistoryItem::translatedTextWithLocalEntities() const {
 				int(result.text.size())
 			});
 		}
+	} else {
+		result = MakuGram::MaskHiddenUserMentions(result);
 	}
 
 	return result;
@@ -5061,7 +5065,9 @@ TextWithEntities HistoryItem::notificationText(
 			result = SpoilerLoginCode(std::move(result));
 		}
 	}
-	if (MakuGram::IsUserHidden(from())) {
+	if (MakuGram::IsUserHidden(from())
+		|| MakuGram::IsUserHidden(author())
+		|| MakuGram::IsUserHidden(history()->peer)) {
 		if (!result.text.isEmpty()) {
 			result.entities.clear();
 			result.entities.push_back({
@@ -5070,6 +5076,8 @@ TextWithEntities HistoryItem::notificationText(
 				int(result.text.size())
 			});
 		}
+	} else {
+		result = MakuGram::MaskHiddenUserMentions(result);
 	}
 	if (result.text.size() <= kNotificationTextLimit) {
 		return result;
@@ -5119,7 +5127,9 @@ ItemPreview HistoryItem::toPreview(ToPreviewOptions options) const {
 			result.text = SpoilerLoginCode(std::move(result.text));
 		}
 	}
-	if (MakuGram::IsUserHidden(from())) {
+	if (MakuGram::IsUserHidden(from())
+		|| MakuGram::IsUserHidden(author())
+		|| MakuGram::IsUserHidden(history()->peer)) {
 		if (!result.text.text.isEmpty()) {
 			result.text.entities.clear();
 			result.text.entities.push_back({
@@ -5128,12 +5138,12 @@ ItemPreview HistoryItem::toPreview(ToPreviewOptions options) const {
 				int(result.text.text.size())
 			});
 		}
+	} else {
+		result.text = MakuGram::MaskHiddenUserMentions(result.text);
 	}
 	const auto fromSender = [](not_null<PeerData*> sender) {
 		if (MakuGram::IsUserHidden(sender)) {
-			return MakuGram::Tr::Get(
-				QString::fromUtf8("Скрытый пользователь"),
-				u"Hidden User"_q);
+			return MakuGram::HiddenUserName();
 		}
 		return sender->isSelf()
 			? tr::lng_from_you(tr::now)

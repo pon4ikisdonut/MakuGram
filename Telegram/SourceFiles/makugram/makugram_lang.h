@@ -17,3 +17,9 @@ namespace MakuGram::Tr {
 [[nodiscard]] rpl::producer<QString> Value(const QString &ru, const QString &en);
 
 } // namespace MakuGram::Tr
+
+namespace MakuGram {
+
+[[nodiscard]] const QString &HiddenUserName();
+
+} // namespace MakuGram

@@ -31,6 +31,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "apiwrap.h"
 #include "makugram/makugram_settings.h"
+#include "makugram/makugram_filter.h"
+#include "makugram/makugram_lang.h"
 #include "api/api_chat_participants.h"
 #include "ui/boxes/confirm_box.h"
 #include "main/main_session.h"
@@ -363,11 +365,14 @@ void PeerData::updateNameDelayed(
 }
 
 not_null<Ui::EmptyUserpic*> PeerData::ensureEmptyUserpic() const {
-	if (!_userpicEmpty) {
-		const auto user = asUser();
+	const auto user = asUser();
+	const auto inaccessible = ((user && user->isInaccessible())
+		|| MakuGram::IsUserHidden(this));
+	if (!_userpicEmpty || _userpicEmptyInaccessible != inaccessible) {
+		_userpicEmptyInaccessible = inaccessible;
 		_userpicEmpty = std::make_unique<Ui::EmptyUserpic>(
 			Ui::EmptyUserpic::UserpicColor(colorIndex()),
-			((user && user->isInaccessible())
+			(inaccessible
 				? Ui::EmptyUserpic::InaccessibleName()
 				: name()));
 	}
@@ -417,6 +422,9 @@ void PeerData::setUserpicPhoto(const MTPPhoto &data) {
 }
 
 QImage *PeerData::userpicCloudImage(Ui::PeerUserpicView &view) const {
+	if (MakuGram::IsUserHidden(this)) {
+		return nullptr;
+	}
 	if (!_userpic.isCurrentView(view.cloud)) {
 		if (!_userpic.empty()) {
 			view.cloud = _userpic.createView();
@@ -450,7 +458,7 @@ void PeerData::paintUserpic(
 		return;
 	}
 	const auto size = context.size;
-	const auto cloud = userpicCloudImage(view);
+	const auto cloud = MakuGram::IsUserHidden(this) ? nullptr : userpicCloudImage(view);
 	const auto ratio = style::DevicePixelRatio();
 	if (context.shape == Ui::PeerUserpicShape::Auto) {
 		context.shape = userpicShape();
@@ -597,6 +605,9 @@ PhotoId PeerData::userpicPhotoId() const {
 }
 
 bool PeerData::userpicHasVideo() const {
+	if (MakuGram::IsUserHidden(this)) {
+		return false;
+	}
 	return _userpicHasVideo != 0;
 }
 
@@ -1351,6 +1362,9 @@ ChannelData *PeerData::broadcastMonoforum() const {
 }
 
 const QString &PeerData::topBarNameText() const {
+	if (MakuGram::IsUserHidden(this)) {
+		return MakuGram::HiddenUserName();
+	}
 	if (const auto to = migrateTo()) {
 		return to->topBarNameText();
 	} else if (const auto user = asUser()) {
@@ -1366,6 +1380,9 @@ int PeerData::nameVersion() const {
 }
 
 const QString &PeerData::name() const {
+	if (MakuGram::IsUserHidden(this)) {
+		return MakuGram::HiddenUserName();
+	}
 	if (const auto to = migrateTo()) {
 		return to->name();
 	} else if (const auto broadcast = monoforumBroadcast()) {
@@ -1375,6 +1392,9 @@ const QString &PeerData::name() const {
 }
 
 const QString &PeerData::shortName() const {
+	if (MakuGram::IsUserHidden(this)) {
+		return MakuGram::HiddenUserName();
+	}
 	if (const auto user = asUser()) {
 		return user->firstName.isEmpty() ? user->lastName : user->firstName;
 	} else if (const auto to = migrateTo()) {
@@ -1386,6 +1406,9 @@ const QString &PeerData::shortName() const {
 }
 
 QString PeerData::username() const {
+	if (MakuGram::IsUserHidden(this)) {
+		return QString();
+	}
 	if (const auto user = asUser()) {
 		return user->username();
 	} else if (const auto channel = asChannel()) {

@@ -210,6 +210,8 @@ public:
 	void removeHiddenUser(const QString &usernameOrId);
 	void toggleUserHidden(const PeerData *peer);
 	[[nodiscard]] bool isUserHidden(const PeerData *peer) const;
+	[[nodiscard]] bool isMentionHidden(const QString &usernameOrName, uint64 userId = 0) const;
+	[[nodiscard]] const QStringList &hiddenNamesList() const;
 	[[nodiscard]] rpl::producer<bool> hiddenUsersChanges() const;
 
 private:
@@ -265,6 +267,7 @@ private:
 	bool _hiddenUsersEnabled = true;
 	QString _hiddenUsersRaw;
 	QStringList _hiddenUsers;
+	QStringList _hiddenNames;
 
 	rpl::event_stream<bool> _hideMessagesFromBlockedChanges;
 	rpl::event_stream<bool> _quickBanInRequestsChanges;

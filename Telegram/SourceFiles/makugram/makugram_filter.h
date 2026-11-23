@@ -6,6 +6,7 @@ a custom Telegram Desktop client fork.
 
 class HistoryItem;
 class PeerData;
+struct TextWithEntities;
 
 namespace MakuGram {
 
@@ -13,5 +14,6 @@ namespace MakuGram {
 [[nodiscard]] bool IsSpamKeywordMessageHidden(const HistoryItem *item);
 [[nodiscard]] bool IsSearchMessageHidden(const HistoryItem *item);
 [[nodiscard]] bool IsUserHidden(const PeerData *peer);
+[[nodiscard]] TextWithEntities MaskHiddenUserMentions(const TextWithEntities &text);
 
 } // namespace MakuGram

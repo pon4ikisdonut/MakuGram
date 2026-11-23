@@ -26,3 +26,13 @@ rpl::producer<QString> Value(const QString &ru, const QString &en) {
 }
 
 } // namespace MakuGram::Tr
+
+namespace MakuGram {
+
+const QString &HiddenUserName() {
+	static const auto kRu = QString::fromUtf8("Скрытый пользователь");
+	static const auto kEn = QString::fromUtf8("Hidden User");
+	return Tr::IsRussian() ? kRu : kEn;
+}
+
+} // namespace MakuGram

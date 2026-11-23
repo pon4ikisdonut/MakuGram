@@ -6,6 +6,9 @@ a custom Telegram Desktop client fork.
 #include "makugram/makugram_updater.h"
 #include "makugram/tg_ws_proxy.h"
 #include "data/data_peer.h"
+#include "data/data_user.h"
+#include "data/data_session.h"
+#include "data/data_changes.h"
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "rpl/then.h"
@@ -999,10 +1002,11 @@ void Settings::toggleUserHidden(const PeerData *peer) {
 	if (!peer) {
 		return;
 	}
+	const auto bareId = QString::number(peer->id.value);
+	const auto userRawId = QString::number(peer->id.value & PeerId::kChatTypeMask);
+	const auto uname = peer->username().trimmed().toLower();
+	const auto rawName = peer->name().trimmed();
 	if (isUserHidden(peer)) {
-		const auto bareId = QString::number(peer->id.value);
-		const auto userRawId = QString::number(peer->id.value & PeerId::kChatTypeMask);
-		const auto uname = peer->username().trimmed().toLower();
 		const auto list = _hiddenUsersRaw.split(
 			QRegularExpression(u"[\\s,;\\n]+"_q),
 			Qt::SkipEmptyParts);
@@ -1017,14 +1021,64 @@ void Settings::toggleUserHidden(const PeerData *peer) {
 			}
 			remaining.append(item.trimmed());
 		}
+		if (!rawName.isEmpty()) {
+			_hiddenNames.removeAll(rawName);
+		}
 		setHiddenUsersRaw(remaining.join(u"\n"_q));
 	} else {
-		const auto uname = peer->username().trimmed();
+		if (!rawName.isEmpty() && !_hiddenNames.contains(rawName)) {
+			_hiddenNames.append(rawName);
+		}
 		const auto identifier = !uname.isEmpty()
 			? ('@' + uname)
 			: QString::number(peer->id.value & PeerId::kChatTypeMask);
 		addHiddenUser(identifier);
 	}
+
+	const_cast<PeerData*>(peer)->invalidateEmptyUserpic();
+	const_cast<PeerData*>(peer)->session().changes().peerUpdated(
+		const_cast<PeerData*>(peer),
+		Data::UpdateFlag::Name | Data::UpdateFlag::Photo);
+}
+
+bool Settings::isMentionHidden(const QString &usernameOrName, uint64 userId) const {
+	if (!_hiddenUsersEnabled || _hiddenUsers.isEmpty()) {
+		return false;
+	}
+	if (userId != 0) {
+		const auto idStr = QString::number(userId);
+		const auto rawStr = QString::number(userId & PeerId::kChatTypeMask);
+		for (const auto &entry : _hiddenUsers) {
+			if (entry == idStr || entry == rawStr) {
+				return true;
+			}
+		}
+	}
+	if (!usernameOrName.isEmpty()) {
+		auto clean = usernameOrName.trimmed().toLower();
+		if (clean.startsWith('@')) {
+			clean.remove(0, 1);
+		}
+		for (const auto &entry : _hiddenUsers) {
+			auto u = entry.trimmed().toLower();
+			if (u.startsWith('@')) {
+				u.remove(0, 1);
+			}
+			if (u == clean) {
+				return true;
+			}
+		}
+		for (const auto &name : _hiddenNames) {
+			if (name.trimmed().toLower() == clean) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+const QStringList &Settings::hiddenNamesList() const {
+	return _hiddenNames;
 }
 
 bool Settings::isUserHidden(const PeerData *peer) const {

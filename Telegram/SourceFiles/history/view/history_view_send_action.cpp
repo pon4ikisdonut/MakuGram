@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_send_action.h"
 
+#include "makugram/makugram_filter.h"
+#include "makugram/makugram_lang.h"
 #include "data/data_user.h"
 #include "data/data_send_action.h"
 #include "data/data_forum_topic.h"
@@ -236,6 +238,12 @@ bool SendActionPainter::updateNeedsAnimating(crl::time now, bool force) {
 	}
 	const auto wasSpeakingAnimation = !!_speakingAnimation;
 	if (force || sendActionChanged || speakingChanged) {
+		const auto userName = [](not_null<UserData*> user) -> const QString & {
+			if (MakuGram::IsUserHidden(user)) {
+				return MakuGram::HiddenUserName();
+			}
+			return user->firstName;
+		};
 		QString newTypingString;
 		auto animationLeft = 0;
 		auto typingCount = _typing.size();
@@ -245,20 +253,20 @@ bool SendActionPainter::updateNeedsAnimating(crl::time now, bool force) {
 			newTypingString = tr::lng_users_typing(
 				tr::now,
 				lt_user,
-				begin(_typing)->first->firstName,
+				userName(begin(_typing)->first),
 				lt_second_user,
-				(end(_typing) - 1)->first->firstName);
+				userName((end(_typing) - 1)->first));
 		} else if (typingCount) {
 			newTypingString = _history->peer->isUser()
 				? tr::lng_typing(tr::now)
 				: tr::lng_user_typing(
 					tr::now,
 					lt_user,
-					begin(_typing)->first->firstName);
+					userName(begin(_typing)->first));
 		} else if (!_sendActions.empty()) {
 			// Handles all actions except game playing.
 			using Type = Api::SendProgressType;
-			const auto sendActionString = [](
+			const auto sendActionString = [&](
 					Type type,
 					const QString &name) -> QString {
 				switch (type) {
@@ -301,7 +309,7 @@ bool SendActionPainter::updateNeedsAnimating(crl::time now, bool force) {
 				const auto isNamed = !_history->peer->isUser();
 				newTypingString = sendActionString(
 					action.type,
-					isNamed ? user->firstName : QString());
+					isNamed ? userName(user) : QString());
 				if (!newTypingString.isEmpty()) {
 					_sendActionAnimation.start(action.type);
 
@@ -347,16 +355,16 @@ bool SendActionPainter::updateNeedsAnimating(crl::time now, bool force) {
 					newTypingString = tr::lng_users_playing_game(
 						tr::now,
 						lt_user,
-						begin(_sendActions)->first->firstName,
+						userName(begin(_sendActions)->first),
 						lt_second_user,
-						(end(_sendActions) - 1)->first->firstName);
+						userName((end(_sendActions) - 1)->first));
 				} else {
 					newTypingString = _history->peer->isUser()
 						? tr::lng_playing_game(tr::now)
 						: tr::lng_user_playing_game(
 							tr::now,
 							lt_user,
-							begin(_sendActions)->first->firstName);
+							userName(begin(_sendActions)->first));
 				}
 				_sendActionAnimation.start(Type::PlayGame);
 			}

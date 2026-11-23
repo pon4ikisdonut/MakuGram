@@ -4,11 +4,13 @@ a custom Telegram Desktop client fork.
 */
 #include "makugram/makugram_filter.h"
 
+#include "makugram/makugram_lang.h"
 #include "makugram/makugram_settings.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "data/data_peer.h"
 #include "data/data_user.h"
+#include "ui/text/text_entity.h"
 #include <QtCore/QStringView>
 
 namespace MakuGram {
@@ -183,6 +185,121 @@ bool IsSearchMessageHidden(const HistoryItem *item) {
 
 bool IsUserHidden(const PeerData *peer) {
 	return Settings::instance().isUserHidden(peer);
+}
+
+TextWithEntities MaskHiddenUserMentions(const TextWithEntities &text) {
+	if (text.text.isEmpty() || !Settings::instance().hiddenUsersEnabled()) {
+		return text;
+	}
+	const auto &settings = Settings::instance();
+	const auto &hiddenUsers = settings.hiddenUsersList();
+	if (hiddenUsers.isEmpty()) {
+		return text;
+	}
+
+	auto result = text;
+
+	// 1. Check existing entities: Mention, MentionName, CustomUrl
+	for (int i = int(result.entities.size()) - 1; i >= 0; --i) {
+		const auto &entity = result.entities[i];
+		bool isHiddenMention = false;
+
+		if (entity.type() == EntityType::Mention) {
+			auto mention = result.text.mid(entity.offset(), entity.length()).trimmed();
+			if (mention.startsWith('@')) {
+				mention = mention.mid(1);
+			}
+			if (settings.isMentionHidden(mention)) {
+				isHiddenMention = true;
+			}
+		} else if (entity.type() == EntityType::MentionName) {
+			const auto userId = entity.data().toULongLong();
+			if (userId && settings.isMentionHidden(QString(), userId)) {
+				isHiddenMention = true;
+			}
+		} else if (entity.type() == EntityType::CustomUrl) {
+			const auto url = entity.data().toLower();
+			for (const auto &entry : hiddenUsers) {
+				auto clean = entry.toLower();
+				if (clean.startsWith('@')) clean = clean.mid(1);
+				if (!clean.isEmpty() && (url.endsWith('/' + clean) || url.contains('/' + clean + '?'))) {
+					isHiddenMention = true;
+					break;
+				}
+			}
+		}
+
+		if (isHiddenMention) {
+			const auto offset = entity.offset();
+			const auto oldLength = entity.length();
+			const auto &replacement = HiddenUserName();
+			const auto newLength = int(replacement.size());
+			const auto delta = newLength - oldLength;
+
+			result.text.replace(offset, oldLength, replacement);
+			result.entities[i] = EntityInText(EntityType::Spoiler, offset, newLength);
+
+			for (int j = i + 1; j < int(result.entities.size()); ++j) {
+				result.entities[j] = EntityInText(
+					result.entities[j].type(),
+					result.entities[j].offset() + delta,
+					result.entities[j].length(),
+					result.entities[j].data());
+			}
+		}
+	}
+
+	// 2. Scan text for any un-entitied @username mentions of hidden users
+	for (const auto &entry : hiddenUsers) {
+		auto clean = entry.trimmed();
+		if (clean.startsWith('@')) clean = clean.mid(1);
+		if (clean.isEmpty() || clean.toULongLong() != 0) {
+			continue;
+		}
+		const auto mentionPattern = '@' + clean;
+		int searchFrom = 0;
+		while (true) {
+			const auto pos = result.text.indexOf(mentionPattern, searchFrom, Qt::CaseInsensitive);
+			if (pos < 0) {
+				break;
+			}
+			const auto afterPos = pos + mentionPattern.size();
+			if (afterPos < result.text.size() && (result.text[afterPos].isLetterOrNumber() || result.text[afterPos] == '_')) {
+				searchFrom = afterPos;
+				continue;
+			}
+
+			bool alreadyCovered = false;
+			for (const auto &e : result.entities) {
+				if (e.offset() <= pos && (e.offset() + e.length()) >= afterPos) {
+					alreadyCovered = true;
+					break;
+				}
+			}
+			if (alreadyCovered) {
+				searchFrom = afterPos;
+				continue;
+			}
+
+			const auto &replacement = HiddenUserName();
+			const auto oldLength = int(mentionPattern.size());
+			const auto newLength = int(replacement.size());
+			const auto delta = newLength - oldLength;
+
+			result.text.replace(pos, oldLength, replacement);
+			result.entities.push_back(EntityInText(EntityType::Spoiler, pos, newLength));
+
+			for (auto &e : result.entities) {
+				if (e.offset() > pos) {
+					e = EntityInText(e.type(), e.offset() + delta, e.length(), e.data());
+				}
+			}
+
+			searchFrom = pos + newLength;
+		}
+	}
+
+	return result;
 }
 
 } // namespace MakuGram

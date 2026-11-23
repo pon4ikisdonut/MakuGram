@@ -1013,7 +1013,10 @@ bool MediaPhoto::allowsEditMedia() const {
 }
 
 bool MediaPhoto::hasSpoiler() const {
-	return _spoiler || MakuGram::IsUserHidden(parent()->from());
+	return _spoiler
+		|| MakuGram::IsUserHidden(parent()->from())
+		|| MakuGram::IsUserHidden(parent()->author())
+		|| MakuGram::IsUserHidden(parent()->history()->peer);
 }
 
 crl::time MediaPhoto::ttlSeconds() const {
@@ -1082,11 +1085,15 @@ std::unique_ptr<HistoryView::Media> MediaPhoto::createView(
 			_photo,
 			st::msgServicePhotoWidth);
 	}
+	const auto spoiler = hasSpoiler()
+		|| MakuGram::IsUserHidden(realParent->from())
+		|| MakuGram::IsUserHidden(realParent->author())
+		|| MakuGram::IsUserHidden(realParent->history()->peer);
 	return std::make_unique<HistoryView::Photo>(
 		message,
 		realParent,
 		_photo,
-		hasSpoiler());
+		spoiler);
 }
 
 MediaFile::MediaFile(
@@ -1429,7 +1436,10 @@ bool MediaFile::dropForwardedInfo() const {
 }
 
 bool MediaFile::hasSpoiler() const {
-	return _spoiler || MakuGram::IsUserHidden(parent()->from());
+	return _spoiler
+		|| MakuGram::IsUserHidden(parent()->from())
+		|| MakuGram::IsUserHidden(parent()->author())
+		|| MakuGram::IsUserHidden(parent()->history()->peer);
 }
 
 crl::time MediaFile::ttlSeconds() const {
@@ -1486,6 +1496,10 @@ std::unique_ptr<HistoryView::Media> MediaFile::createView(
 		not_null<HistoryView::Element*> message,
 		not_null<HistoryItem*> realParent,
 		HistoryView::Element *replacing) {
+	const auto spoiler = hasSpoiler()
+		|| MakuGram::IsUserHidden(realParent->from())
+		|| MakuGram::IsUserHidden(realParent->author())
+		|| MakuGram::IsUserHidden(realParent->history()->peer);
 	if (_document->sticker()) {
 		return std::make_unique<HistoryView::UnwrappedMedia>(
 			message,
@@ -1510,14 +1524,14 @@ std::unique_ptr<HistoryView::Media> MediaFile::createView(
 				message,
 				realParent,
 				_document,
-				hasSpoiler());
+				spoiler);
 		}
 	} else if (_document->isAnimation() || _document->isVideoFile()) {
 		return std::make_unique<HistoryView::Gif>(
 			message,
 			realParent,
 			_document,
-			hasSpoiler());
+			spoiler);
 	} else if (_document->isTheme() && _document->hasThumbnail()) {
 		return std::make_unique<HistoryView::ThemeDocument>(
 			message,

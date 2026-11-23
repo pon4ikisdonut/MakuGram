@@ -737,6 +737,7 @@ ListWidget::ListWidget(
 			| rpl::to_empty
 	) | rpl::on_next([=] {
 		crl::on_main(this, [=] {
+			_userpics.clear();
 			if (_viewsCapacity.empty()) {
 				for (const auto &view : _items) {
 					view->setPendingResize();
@@ -744,6 +745,7 @@ ListWidget::ListWidget(
 				const auto old = _slice;
 				refreshRows(old);
 			}
+			update();
 		});
 	}, lifetime());
 
@@ -3736,18 +3738,16 @@ void ListWidget::paintUserpics(
 						st::msgPhotoSize));
 			}
 			if (const auto from = view->displayFrom()) {
-				if (!MakuGram::IsUserHidden(from)) {
-					Dialogs::Ui::PaintUserpic(
-						p,
-						from,
-						validateVideoUserpic(from),
-						_userpics[from],
-						st::historyPhotoLeft,
-						userpicTop,
-						view->width(),
-						st::msgPhotoSize,
-						context.paused);
-				}
+				Dialogs::Ui::PaintUserpic(
+					p,
+					from,
+					validateVideoUserpic(from),
+					_userpics[from],
+					st::historyPhotoLeft,
+					userpicTop,
+					view->width(),
+					st::msgPhotoSize,
+					context.paused);
 			} else if (const auto info = item->displayHiddenSenderInfo()) {
 				if (info->customUserpic.empty()) {
 					info->emptyUserpic.paintCircle(
