@@ -1,7 +1,7 @@
 # MakuGramR (Refresh)
 
-[![Build MakuGram](https://github.com/pon4ikisdonut/MakuGram/actions/workflows/build.yml/badge.svg)](https://github.com/pon4ikisdonut/MakuGram/actions/workflows/build.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/pon4ikisdonut/MakuGram?include_prereleases&label=release)](https://github.com/pon4ikisdonut/MakuGram/releases)
+[![Build MakuGram](https://github.com/pon4ikisdonut/MakuGramR/actions/workflows/build.yml/badge.svg)](https://github.com/pon4ikisdonut/MakuGramR/actions/workflows/build.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/pon4ikisdonut/MakuGramR?include_prereleases&label=release)](https://github.com/pon4ikisdonut/MakuGramR/releases)
 [![Telegram Chat](https://img.shields.io/badge/Telegram-Чат%20ОПГ%20«Радуга»-blue.svg)](https://t.me/OPG_R4duga)
 
 **MakuGramR (Refresh)** — форк Telegram Desktop и MakuGram с расширенными возможностями модерации, приватности, встроенным WebSocket-прокси (TG WS Proxy) и полноценным режимом невидимки (Ghost Mode).
@@ -14,7 +14,7 @@
 * **Автор (Original MakuGram)**: [Mark Adderly](https://github.com/MarkAdderly)
 * **Чат ОПГ «Радуга»**: [t.me/OPG_R4duga](https://t.me/OPG_R4duga)
 * **Личка автора**: [t.me/pon4ikisdonut](https://t.me/pon4ikisdonut)
-* **Репозиторий проекта**: [github.com/pon4ikisdonut/MakuGram](https://github.com/pon4ikisdonut/MakuGram)
+* **Репозиторий проекта**: [github.com/pon4ikisdonut/MakuGramR](https://github.com/pon4ikisdonut/MakuGramR)
 * **Оригинальный репозиторий MakuGram**: [github.com/MarkAdderly/MakuGram](https://github.com/MarkAdderly/MakuGram)
 
 ---

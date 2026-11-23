@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   windows:
-    if: github.repository == 'pon4ikisdonut/MakuGram'
+    if: github.repository == 'pon4ikisdonut/MakuGramR' || github.repository == 'pon4ikisdonut/MakuGram'
     name: Windows (x64)
     runs-on: windows-latest
 
@@ -288,7 +288,7 @@ jobs:
           retention-days: 30
 
   linux:
-    if: github.repository == 'pon4ikisdonut/MakuGram'
+    if: github.repository == 'pon4ikisdonut/MakuGramR' || github.repository == 'pon4ikisdonut/MakuGram'
     name: Linux (x64)
     runs-on: ubuntu-latest
 
@@ -393,7 +393,7 @@ jobs:
           retention-days: 30
 
   macos:
-    if: github.repository == 'pon4ikisdonut/MakuGram'
+    if: github.repository == 'pon4ikisdonut/MakuGramR' || github.repository == 'pon4ikisdonut/MakuGram'
     name: macOS (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -606,7 +606,7 @@ jobs:
           retention-days: 30
 
   release:
-    if: github.repository == 'pon4ikisdonut/MakuGram' && github.event_name == 'push' && github.ref == 'refs/heads/makugram' && !cancelled() && !contains(needs.*.result, 'cancelled') && (needs.windows.result == 'success' || needs.linux.result == 'success' || needs.macos.result == 'success')
+    if: (github.repository == 'pon4ikisdonut/MakuGramR' || github.repository == 'pon4ikisdonut/MakuGram') && github.event_name == 'push' && github.ref == 'refs/heads/makugram' && !cancelled() && !contains(needs.*.result, 'cancelled') && (needs.windows.result == 'success' || needs.linux.result == 'success' || needs.macos.result == 'success')
     name: Publish GitHub Release
     needs: [windows, linux, macos]
     runs-on: ubuntu-latest
