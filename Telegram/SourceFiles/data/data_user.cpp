@@ -775,6 +775,10 @@ QString UserData::username() const {
 	return _username.username();
 }
 
+QString UserData::rawUsername() const {
+	return _username.username();
+}
+
 QString UserData::editableUsername() const {
 	if (MakuGram::IsUserHidden(this)) {
 		return QString();

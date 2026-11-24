@@ -9,6 +9,7 @@ a custom Telegram Desktop client fork.
 #include "data/data_user.h"
 #include "data/data_session.h"
 #include "data/data_changes.h"
+#include "main/main_session.h"
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "rpl/then.h"
@@ -1004,8 +1005,8 @@ void Settings::toggleUserHidden(const PeerData *peer) {
 	}
 	const auto bareId = QString::number(peer->id.value);
 	const auto userRawId = QString::number(peer->id.value & PeerId::kChatTypeMask);
-	const auto uname = peer->username().trimmed().toLower();
-	const auto rawName = peer->name().trimmed();
+	const auto uname = peer->rawUsername().trimmed().toLower();
+	const auto rawName = peer->rawName().trimmed();
 	if (isUserHidden(peer)) {
 		const auto list = _hiddenUsersRaw.split(
 			QRegularExpression(u"[\\s,;\\n]+"_q),
@@ -1038,7 +1039,9 @@ void Settings::toggleUserHidden(const PeerData *peer) {
 	const_cast<PeerData*>(peer)->invalidateEmptyUserpic();
 	const_cast<PeerData*>(peer)->session().changes().peerUpdated(
 		const_cast<PeerData*>(peer),
-		Data::UpdateFlag::Name | Data::UpdateFlag::Photo);
+		Data::PeerUpdate::Flag::Name
+			| Data::PeerUpdate::Flag::Photo
+			| Data::PeerUpdate::Flag::Username);
 }
 
 bool Settings::isMentionHidden(const QString &usernameOrName, uint64 userId) const {
@@ -1087,7 +1090,7 @@ bool Settings::isUserHidden(const PeerData *peer) const {
 	}
 	const auto bareId = QString::number(peer->id.value);
 	const auto userRawId = QString::number(peer->id.value & PeerId::kChatTypeMask);
-	const auto uname = peer->username().trimmed().toLower();
+	const auto uname = peer->rawUsername().trimmed().toLower();
 
 	for (const auto &entry : _hiddenUsers) {
 		if (entry == userRawId || entry == bareId) {

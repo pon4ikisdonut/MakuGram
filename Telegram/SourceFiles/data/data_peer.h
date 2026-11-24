@@ -380,8 +380,12 @@ public:
 	[[nodiscard]] const QString &name() const;
 	[[nodiscard]] const QString &shortName() const;
 	[[nodiscard]] const QString &topBarNameText() const;
+	[[nodiscard]] const QString &rawName() const {
+		return _name;
+	}
 
 	[[nodiscard]] QString username() const;
+	[[nodiscard]] QString rawUsername() const;
 	[[nodiscard]] QString editableUsername() const;
 	[[nodiscard]] const std::vector<QString> &usernames() const;
 	[[nodiscard]] bool isUsernameEditable(QString username) const;
@@ -439,6 +443,7 @@ public:
 	[[nodiscard]] Ui::PeerUserpicView activeUserpicView();
 	[[nodiscard]] Ui::PeerUserpicView createUserpicView();
 	[[nodiscard]] bool useEmptyUserpic(Ui::PeerUserpicView &view) const;
+	void invalidateEmptyUserpic();
 	[[nodiscard]] InMemoryKey userpicUniqueKey(Ui::PeerUserpicView &view) const;
 	[[nodiscard]] static QImage GenerateUserpicImage(
 		not_null<PeerData*> peer,
@@ -612,7 +617,6 @@ protected:
 		const QString &newUsername);
 	void updateUserpic(PhotoId photoId, MTP::DcId dcId, bool hasVideo);
 	void clearUserpic();
-	void invalidateEmptyUserpic();
 	void checkTrustedPayForMessage();
 
 private:

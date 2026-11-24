@@ -250,6 +250,7 @@ public:
 
 	[[nodiscard]] const QString &phone() const;
 	[[nodiscard]] QString username() const;
+	[[nodiscard]] QString rawUsername() const;
 	[[nodiscard]] QString editableUsername() const;
 	[[nodiscard]] const std::vector<QString> &usernames() const;
 	[[nodiscard]] bool isUsernameEditable(QString username) const;

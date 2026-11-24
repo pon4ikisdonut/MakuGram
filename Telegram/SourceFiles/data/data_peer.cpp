@@ -1417,6 +1417,15 @@ QString PeerData::username() const {
 	return QString();
 }
 
+QString PeerData::rawUsername() const {
+	if (const auto user = asUser()) {
+		return user->rawUsername();
+	} else if (const auto channel = asChannel()) {
+		return channel->username();
+	}
+	return QString();
+}
+
 QString PeerData::editableUsername() const {
 	if (const auto user = asUser()) {
 		return user->editableUsername();
