@@ -14,7 +14,7 @@ namespace MakuGram {
 
 inline constexpr auto kAppName = "MakuGramR";
 inline constexpr auto kVersion = "1.2.0";
-inline constexpr auto kGitHubRepo = "pon4ikisdonut/MakuGramR";
+inline constexpr auto kGitHubRepo = "pon4ikisdonut/MakuGram";
 
 #ifdef MAKUGRAM_BUILD_NUMBER
 inline constexpr auto kBuildNumber = MAKUGRAM_BUILD_NUMBER;
