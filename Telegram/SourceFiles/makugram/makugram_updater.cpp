@@ -286,11 +286,17 @@ public:
 
 			const auto assets = obj.value(u"assets"_q).toArray();
 
-			// 1. Prefer portable .zip (contains clean MakuGram.exe for seamless in-place update)
+			// Match assets specific to current platform
+#if defined(Q_OS_WIN)
+			// 1. Prefer Windows portable .zip (e.g. MakuGramR-win-x64.zip)
 			for (const auto &val : assets) {
 				const auto a = val.toObject();
 				const auto aName = a.value(u"name"_q).toString();
 				if (aName.endsWith(u".zip"_q, Qt::CaseInsensitive)
+					&& (aName.contains(u"win"_q, Qt::CaseInsensitive) || aName.contains(u"windows"_q, Qt::CaseInsensitive))
+					&& !aName.contains(u"mac"_q, Qt::CaseInsensitive)
+					&& !aName.contains(u"osx"_q, Qt::CaseInsensitive)
+					&& !aName.contains(u"linux"_q, Qt::CaseInsensitive)
 					&& !aName.contains(u"setup"_q, Qt::CaseInsensitive)
 					&& !aName.contains(u"installer"_q, Qt::CaseInsensitive)) {
 					info.asset.name = aName;
@@ -300,21 +306,7 @@ public:
 				}
 			}
 
-			// 2. Fallback: any .zip
-			if (info.asset.url.isEmpty()) {
-				for (const auto &val : assets) {
-					const auto a = val.toObject();
-					const auto aName = a.value(u"name"_q).toString();
-					if (aName.endsWith(u".zip"_q, Qt::CaseInsensitive)) {
-						info.asset.name = aName;
-						info.asset.url = a.value(u"browser_download_url"_q).toString();
-						info.asset.size = a.value(u"size"_q).toVariant().toLongLong();
-						break;
-					}
-				}
-			}
-
-			// 3. Fallback: direct MakuGram.exe (NEVER setup or installer!)
+			// 2. Fallback: clean portable .exe (never setup/installer)
 			if (info.asset.url.isEmpty()) {
 				for (const auto &val : assets) {
 					const auto a = val.toObject();
@@ -329,6 +321,35 @@ public:
 					}
 				}
 			}
+#elif defined(Q_OS_MAC)
+			// macOS: .zip or .dmg for macos
+			for (const auto &val : assets) {
+				const auto a = val.toObject();
+				const auto aName = a.value(u"name"_q).toString();
+				if ((aName.endsWith(u".zip"_q, Qt::CaseInsensitive) || aName.endsWith(u".dmg"_q, Qt::CaseInsensitive))
+					&& (aName.contains(u"mac"_q, Qt::CaseInsensitive) || aName.contains(u"osx"_q, Qt::CaseInsensitive) || aName.contains(u"darwin"_q, Qt::CaseInsensitive))) {
+					info.asset.name = aName;
+					info.asset.url = a.value(u"browser_download_url"_q).toString();
+					info.asset.size = a.value(u"size"_q).toVariant().toLongLong();
+					break;
+				}
+			}
+#elif defined(Q_OS_LINUX)
+			// Linux: .tar.xz, .tar.gz, .AppImage for linux
+			for (const auto &val : assets) {
+				const auto a = val.toObject();
+				const auto aName = a.value(u"name"_q).toString();
+				if ((aName.contains(u"linux"_q, Qt::CaseInsensitive))
+					&& (aName.endsWith(u".tar.xz"_q, Qt::CaseInsensitive)
+						|| aName.endsWith(u".tar.gz"_q, Qt::CaseInsensitive)
+						|| aName.endsWith(u".AppImage"_q, Qt::CaseInsensitive))) {
+					info.asset.name = aName;
+					info.asset.url = a.value(u"browser_download_url"_q).toString();
+					info.asset.size = a.value(u"size"_q).toVariant().toLongLong();
+					break;
+				}
+			}
+#endif
 
 			const auto currentVer = ParseVersion(kVersion);
 			const auto latestVer = ParseVersion(info.tag);
@@ -626,8 +647,8 @@ private:
 									newExePath = found;
 									break;
 								} else if (fn.compare(u"Telegram.exe"_q, Qt::CaseInsensitive) == 0
-									|| fn.compare(u"MakuGram.exe"_q, Qt::CaseInsensitive)
-									|| fn.compare(u"MakuGramR.exe"_q, Qt::CaseInsensitive)) {
+									|| fn.compare(u"MakuGram.exe"_q, Qt::CaseInsensitive) == 0
+									|| fn.compare(u"MakuGramR.exe"_q, Qt::CaseInsensitive) == 0) {
 									newExePath = found;
 									break;
 								} else if (newExePath.isEmpty()) {
@@ -646,6 +667,21 @@ private:
 									b->setText(Tr::Value(u"Попробовать снова"_q, u"Try again"_q));
 								}
 								return;
+							}
+
+							const auto modulesSrc = extractDir + u"modules"_q;
+							if (QDir(modulesSrc).exists()) {
+								const auto modulesDst = cExeDir() + u"modules"_q;
+								QDir().mkpath(modulesDst);
+								QDirIterator modIt(modulesSrc, QDir::Files, QDirIterator::Subdirectories);
+								while (modIt.hasNext()) {
+									const auto srcFile = modIt.next();
+									const auto rel = QDir(modulesSrc).relativeFilePath(srcFile);
+									const auto targetPath = modulesDst + u"/"_q + rel;
+									QDir().mkpath(QFileInfo(targetPath).dir().absolutePath());
+									QFile::remove(targetPath);
+									QFile::copy(srcFile, targetPath);
+								}
 							}
 						} else {
 							newExePath = session->downloadPath;
