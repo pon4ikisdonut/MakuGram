@@ -143,19 +143,22 @@ bool ApplyUpdateAndRestart(const QString &newExePath, QString *outError = nullpt
 
 #ifdef Q_OS_WIN
 	// 3. Fallback: if running from Program Files without admin rights, elevate via UAC PowerShell
-	const auto nativeCurrent = QDir::toNativeSeparators(currentExe);
-	const auto nativeOld = QDir::toNativeSeparators(oldExe);
-	const auto nativeNew = QDir::toNativeSeparators(newExePath);
-	const auto exeNameWithoutExt = QFileInfo(currentExe).baseName();
+	const auto psEscape = [](QString s) {
+		return s.replace(u"'"_q, u"''"_q);
+	};
+	const auto nativeCurrent = psEscape(QDir::toNativeSeparators(currentExe));
+	const auto nativeOld = psEscape(QDir::toNativeSeparators(oldExe));
+	const auto nativeNew = psEscape(QDir::toNativeSeparators(newExePath));
 
 	const auto script = QString(
 		"Start-Sleep -Milliseconds 1200; "
-		"Stop-Process -Name '%1' -Force -ErrorAction SilentlyContinue; "
+		"Stop-Process -Id %1 -Force -ErrorAction SilentlyContinue; "
+		"Start-Sleep -Milliseconds 300; "
 		"if (Test-Path -LiteralPath '%3') { Remove-Item -LiteralPath '%3' -Force -ErrorAction SilentlyContinue }; "
 		"Move-Item -LiteralPath '%2' -Destination '%3' -Force; "
 		"Move-Item -LiteralPath '%4' -Destination '%2' -Force; "
 		"Start-Process -FilePath '%2'")
-		.arg(exeNameWithoutExt)
+		.arg(quint64(GetCurrentProcessId()))
 		.arg(nativeCurrent)
 		.arg(nativeOld)
 		.arg(nativeNew);
@@ -174,8 +177,7 @@ bool ApplyUpdateAndRestart(const QString &newExePath, QString *outError = nullpt
 		SW_HIDE);
 
 	if (reinterpret_cast<INT_PTR>(res) > 32) {
-		cSetRestarting(true);
-		cSetRestartingToSettings(false);
+		cSetRestarting(false);
 		Core::Quit();
 		return true;
 	}
@@ -596,25 +598,46 @@ private:
 							QDir(extractDir).removeRecursively();
 							QDir().mkpath(extractDir);
 
+							const auto hasFiles = [&]() {
+								return !QDir(extractDir).entryList(
+									QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty();
+							};
 							bool extracted = false;
 							{
 								QProcess tar;
-								tar.start(u"tar"_q, { u"-xf"_q, session->downloadPath, u"-C"_q, extractDir });
-								if (tar.waitForFinished(60000) && tar.exitCode() == 0) {
+#ifdef Q_OS_WIN
+								const auto sysTar = u"C:/Windows/System32/tar.exe"_q;
+								const auto tarBin = QFile::exists(sysTar) ? sysTar : u"tar"_q;
+#else
+								const auto tarBin = u"tar"_q;
+#endif
+								tar.start(tarBin, { u"-xf"_q, session->downloadPath, u"-C"_q, extractDir });
+								if (tar.waitForFinished(60000)
+									&& tar.exitStatus() == QProcess::NormalExit
+									&& tar.exitCode() == 0
+									&& hasFiles()) {
 									extracted = true;
 								}
 							}
 							if (!extracted) {
 								QProcess ps;
+								const auto psEscape = [](QString s) {
+									return s.replace(u"'"_q, u"''"_q);
+								};
+								const auto nativeZip = psEscape(QDir::toNativeSeparators(session->downloadPath));
+								const auto nativeDir = psEscape(QDir::toNativeSeparators(extractDir));
 								ps.start(u"powershell"_q, {
 									u"-NoProfile"_q,
 									u"-NonInteractive"_q,
 									u"-Command"_q,
 									QString::fromUtf8("Expand-Archive -LiteralPath '%1' -DestinationPath '%2' -Force")
-										.arg(session->downloadPath)
-										.arg(extractDir)
+										.arg(nativeZip)
+										.arg(nativeDir)
 								});
-								if (ps.waitForFinished(60000) && ps.exitCode() == 0) {
+								if (ps.waitForFinished(60000)
+									&& ps.exitStatus() == QProcess::NormalExit
+									&& ps.exitCode() == 0
+									&& hasFiles()) {
 									extracted = true;
 								}
 							}

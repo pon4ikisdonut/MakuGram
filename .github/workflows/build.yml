@@ -231,7 +231,7 @@ jobs:
             Copy-Item $modules (Join-Path $stage "modules") -Recurse
           }
           New-Item -ItemType Directory -Force -Path "artifact" | Out-Null
-          Compress-Archive -Path "$stage\*" -DestinationPath "artifact\MakuGramR-win-x64.zip" -Force
+          Compress-Archive -Path "$stage\*" -DestinationPath "artifact\MakuGramR-Desktop-win-x64.zip" -Force
 
           # Locate or install Inno Setup compiler (ISCC)
           $iscc = (Get-Command iscc.exe -ErrorAction SilentlyContinue)?.Source
