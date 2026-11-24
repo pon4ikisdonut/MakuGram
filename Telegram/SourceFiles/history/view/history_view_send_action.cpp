@@ -59,6 +59,10 @@ void SendActionPainter::setTopic(Data::ForumTopic *topic) {
 bool SendActionPainter::updateNeedsAnimating(
 		not_null<UserData*> user,
 		const MTPSendMessageAction &action) {
+	if (MakuGram::IsUserFullHidden(user)) {
+		clear(user);
+		return false;
+	}
 	using Type = Api::SendProgressType;
 	if (action.type() == mtpc_sendMessageCancelAction) {
 		clear(user);

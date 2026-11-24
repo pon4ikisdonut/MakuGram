@@ -734,6 +734,8 @@ ListWidget::ListWidget(
 		MakuGram::Settings::instance().streamerModeChanges()
 			| rpl::to_empty,
 		MakuGram::Settings::instance().hiddenUsersChanges()
+			| rpl::to_empty,
+		MakuGram::Settings::instance().fullHiddenUsersChanges()
 			| rpl::to_empty
 	) | rpl::on_next([=] {
 		crl::on_main(this, [=] {
@@ -991,7 +993,9 @@ void ListWidget::refreshRows(const Data::MessagesSlice &old) {
 	auto nearestIndex = -1;
 	const auto pushItem = [&](const FullMsgId &fullId) {
 		if (const auto item = session().data().message(fullId)) {
-			if (MakuGram::IsBlockedMessageHidden(item) || MakuGram::IsSpamKeywordMessageHidden(item)) {
+			if (MakuGram::IsBlockedMessageHidden(item)
+				|| MakuGram::IsSpamKeywordMessageHidden(item)
+				|| MakuGram::IsFullHiddenMessageHidden(item)) {
 				return;
 			}
 			if (_slice.nearestToAround == fullId) {

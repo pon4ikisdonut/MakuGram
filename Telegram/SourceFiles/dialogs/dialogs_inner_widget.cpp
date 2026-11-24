@@ -411,8 +411,19 @@ InnerWidget::InnerWidget(
 		update();
 	}, lifetime());
 
-	MakuGram::Settings::instance().compactChatListChanges(
+	rpl::merge(
+		MakuGram::Settings::instance().compactChatListChanges(),
+		MakuGram::Settings::instance().fullHiddenUsersChanges()
 	) | rpl::on_next([=] {
+		if (_selected && _selected->isFullHidden()) {
+			_selected = nullptr;
+		}
+		if (_pressed && _pressed->isFullHidden()) {
+			_pressed = nullptr;
+		}
+		if (_dragging && _dragging->isFullHidden()) {
+			_dragging = nullptr;
+		}
 		const auto updateListHeights = [&](Dialogs::IndexedList *list) {
 			if (list) {
 				list->updateHeights(_narrowRatio);
@@ -432,6 +443,11 @@ InnerWidget::InnerWidget(
 		}
 		if (MakuGram::Settings::instance().unreadOnlyActive()) {
 			refreshUnreadOnly();
+		} else if (_state == WidgetState::Filtered && !_filter.isEmpty()) {
+			_rowsScrollCache.clear();
+			_cachedRows.clear();
+			refreshFilterResults();
+			refresh(true);
 		} else {
 			_rowsScrollCache.clear();
 			_cachedRows.clear();
@@ -1174,6 +1190,9 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 			not_null<Row*> row,
 			bool selected,
 			bool mayBeActive) {
+		if (row->height() <= 0) {
+			return;
+		}
 		const auto &key = row->key();
 		const auto active = mayBeActive && isRowActive(row, activeEntry);
 		const auto history = key.history();
@@ -1451,6 +1470,10 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 						break;
 					} else if (!removedPainted && top >= removedTop) {
 						paintRemoved();
+					}
+
+					if (row->height() <= 0) {
+						continue;
 					}
 
 					// Skip currently dragged chat to paint it above others after.
@@ -3432,6 +3455,9 @@ void InnerWidget::moveSearchIn() {
 }
 
 void InnerWidget::prepareRemovedRowSlide(not_null<Row*> row) {
+	if (row->height() <= 0) {
+		return;
+	}
 	const auto top = dialogsOffset() + row->top();
 	if (_state != WidgetState::Default
 		|| communityModeShown()
@@ -4633,14 +4659,14 @@ void InnerWidget::refreshFilterResults() {
 	const auto append = [&](not_null<IndexedList*> list) {
 		const auto results = list->filtered(words);
 		auto top = filteredHeight();
-		auto i = _filterResults.insert(
-			end(_filterResults),
-			begin(results),
-			end(results));
-		for (const auto e = end(_filterResults); i != e; ++i) {
-			i->top = top;
-			i->row->recountHeight(_narrowRatio, _filterId);
-			top += i->row->height();
+		for (const auto &row : results) {
+			if (row->isFullHidden()) {
+				continue;
+			}
+			_filterResults.emplace_back(row);
+			_filterResults.back().top = top;
+			_filterResults.back().row->recountHeight(_narrowRatio, _filterId);
+			top += _filterResults.back().row->height();
 		}
 	};
 	if (_searchState.filterChatsList() && !words.isEmpty()) {
@@ -4659,6 +4685,9 @@ void InnerWidget::refreshFilterResults() {
 		}
 	}
 	for (const auto &[key, row] : _filterResultsGlobal) {
+		if (row->isFullHidden()) {
+			continue;
+		}
 		if (!ranges::contains(_filterResults, key, &FilterResult::key)) {
 			const auto height = filteredHeight();
 			_filterResults.emplace_back(row.get());
@@ -4669,6 +4698,9 @@ void InnerWidget::refreshFilterResults() {
 }
 
 void InnerWidget::appendToFiltered(Key key) {
+	if (const auto peer = key.peer(); peer && MakuGram::IsUserFullHidden(peer)) {
+		return;
+	}
 	for (const auto &row : _filterResults) {
 		if (row.key() == key) {
 			return;
@@ -5128,7 +5160,7 @@ void InnerWidget::peerSearchReceived(Api::PeerSearchResult result) {
 	auto added = base::flat_set<not_null<PeerData*>>();
 	for (const auto &sponsored : result.sponsored) {
 		const auto peer = sponsored.peer;
-		if (inlist(peer) || _sponsoredRemoved.contains(peer)) {
+		if (inlist(peer) || _sponsoredRemoved.contains(peer) || MakuGram::IsUserFullHidden(peer)) {
 			continue;
 		}
 		_peerSearchResults.push_back(
@@ -5140,7 +5172,7 @@ void InnerWidget::peerSearchReceived(Api::PeerSearchResult result) {
 		added.emplace(peer);
 	}
 	for (const auto &peer : result.peers) {
-		if (added.contains(peer) || inlist(peer)) {
+		if (added.contains(peer) || inlist(peer) || MakuGram::IsUserFullHidden(peer)) {
 			continue;
 		}
 		_peerSearchResults.push_back(
@@ -5640,6 +5672,9 @@ void InnerWidget::refreshUnreadOnly() {
 	auto top = 0;
 	const auto addUnreadFromList = [&](not_null<IndexedList*> list) {
 		for (const auto &row : list->all()) {
+			if (row->isFullHidden()) {
+				continue;
+			}
 			const auto entry = row->entry();
 			const auto badges = entry->chatListBadgesState();
 			const auto history = entry->asHistory();
@@ -5711,7 +5746,12 @@ void InnerWidget::selectSkip(int32 direction) {
 			if (!_collapsedRows.empty()) {
 				_collapsedSelected = 0;
 			} else {
-				_selected = (_shownList->cbegin() + skip)->get();
+				for (auto i = _shownList->cbegin() + skip, e = _shownList->cend(); i != e; ++i) {
+					if (!(*i)->isFullHidden()) {
+						_selected = (*i).get();
+						break;
+					}
+				}
 			}
 		} else {
 			auto cur = (_collapsedSelected >= 0)
@@ -5731,8 +5771,20 @@ void InnerWidget::selectSkip(int32 direction) {
 				_collapsedSelected = cur;
 				_selected = nullptr;
 			} else {
-				_collapsedSelected = -1;
-				_selected = *(_shownList->cbegin() + skip + cur - _collapsedRows.size());
+				const auto step = (direction < 0) ? -1 : 1;
+				const auto total = int(_collapsedRows.size() + _shownList->size() - skip);
+				while (cur >= int(_collapsedRows.size())
+					&& cur < total
+					&& (*(_shownList->cbegin() + skip + cur - _collapsedRows.size()))->isFullHidden()) {
+					cur += step;
+				}
+				if (cur < int(_collapsedRows.size()) && cur >= 0) {
+					_collapsedSelected = cur;
+					_selected = nullptr;
+				} else if (cur >= int(_collapsedRows.size()) && cur < total) {
+					_collapsedSelected = -1;
+					_selected = *(_shownList->cbegin() + skip + cur - _collapsedRows.size());
+				}
 			}
 		}
 		scrollToDefaultSelected();

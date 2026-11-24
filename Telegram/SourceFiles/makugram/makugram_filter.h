@@ -14,6 +14,8 @@ namespace MakuGram {
 [[nodiscard]] bool IsSpamKeywordMessageHidden(const HistoryItem *item);
 [[nodiscard]] bool IsSearchMessageHidden(const HistoryItem *item);
 [[nodiscard]] bool IsUserHidden(const PeerData *peer);
+[[nodiscard]] bool IsUserFullHidden(const PeerData *peer);
+[[nodiscard]] bool IsFullHiddenMessageHidden(const HistoryItem *item);
 [[nodiscard]] TextWithEntities MaskHiddenUserMentions(const TextWithEntities &text);
 
 } // namespace MakuGram

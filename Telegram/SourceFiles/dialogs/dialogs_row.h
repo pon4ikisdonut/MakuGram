@@ -96,7 +96,11 @@ public:
 	[[nodiscard]] int top() const {
 		return _top;
 	}
+	[[nodiscard]] bool isFullHidden() const;
 	[[nodiscard]] int height() const {
+		if (isFullHidden()) {
+			return 0;
+		}
 		if (MakuGram::Settings::instance().compactChatList()) {
 			return 42;
 		}

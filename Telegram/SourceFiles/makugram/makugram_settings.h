@@ -214,6 +214,19 @@ public:
 	[[nodiscard]] const QStringList &hiddenNamesList() const;
 	[[nodiscard]] rpl::producer<bool> hiddenUsersChanges() const;
 
+	[[nodiscard]] bool fullHiddenUsersEnabled() const;
+	void setFullHiddenUsersEnabled(bool enabled);
+	[[nodiscard]] rpl::producer<bool> fullHiddenUsersEnabledChanges() const;
+
+	[[nodiscard]] QString fullHiddenUsersRaw() const;
+	void setFullHiddenUsersRaw(const QString &raw);
+	[[nodiscard]] QStringList fullHiddenUsersList() const;
+	void addFullHiddenUser(const QString &usernameOrId);
+	void removeFullHiddenUser(const QString &usernameOrId);
+	void toggleUserFullHidden(const PeerData *peer);
+	[[nodiscard]] bool isUserFullHidden(const PeerData *peer) const;
+	[[nodiscard]] rpl::producer<bool> fullHiddenUsersChanges() const;
+
 private:
 	Settings();
 	~Settings() = default;
@@ -223,6 +236,7 @@ private:
 
 	void parseSpamKeywords();
 	void parseHiddenUsers();
+	void parseFullHiddenUsers();
 
 	bool _hideMessagesFromBlocked = false;
 	bool _quickBanInRequests = false;
@@ -268,6 +282,9 @@ private:
 	QString _hiddenUsersRaw;
 	QStringList _hiddenUsers;
 	QStringList _hiddenNames;
+	bool _fullHiddenUsersEnabled = true;
+	QString _fullHiddenUsersRaw;
+	QStringList _fullHiddenUsers;
 
 	rpl::event_stream<bool> _hideMessagesFromBlockedChanges;
 	rpl::event_stream<bool> _quickBanInRequestsChanges;
@@ -309,6 +326,8 @@ private:
 	rpl::event_stream<QString> _tgWsProxyWorkerChanges;
 	rpl::event_stream<bool> _hiddenUsersEnabledChanges;
 	rpl::event_stream<bool> _hiddenUsersChanges;
+	rpl::event_stream<bool> _fullHiddenUsersEnabledChanges;
+	rpl::event_stream<bool> _fullHiddenUsersChanges;
 };
 
 } // namespace MakuGram

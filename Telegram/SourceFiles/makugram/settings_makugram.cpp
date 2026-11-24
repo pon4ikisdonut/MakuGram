@@ -308,6 +308,71 @@ void ShowHiddenUsersBox(not_null<Window::SessionController*> controller) {
 	}));
 }
 
+void ShowFullHiddenUsersBox(not_null<Window::SessionController*> controller) {
+	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+		box->setWidth(kBoxContentWidth);
+		box->setMaxHeight(kBoxMaxHeight);
+		box->setTitle(Tr::Value(
+			QString::fromUtf8("Полностью скрытые пользователи"),
+			u"Full-Hidden Users"_q));
+
+		box->addRow(
+			object_ptr<Ui::FlatLabel>(
+				box,
+				Tr::Value(
+					QString::fromUtf8(
+						"Введите юзернеймы (@username) или числовые ID пользователей через запятую или с новой строки.\n"
+						"Эти пользователи полностью исчезнут из списка чатов, поиска и списка участников, а их сообщения, статусы набора текста и уведомления вообще не будут отображаться (без блокировки в Telegram):"),
+					u"Enter usernames (@username) or numeric user IDs separated by commas or new lines.\n"
+					"These users will completely disappear from the chat list, search, and member lists, and their messages, typing indicators, and notifications will not be displayed at all (without blocking them in Telegram):"_q),
+				st::boxLabel),
+			st::boxRowPadding);
+
+		const auto field = box->addRow(
+			object_ptr<Ui::InputField>(
+				box,
+				st::supportInfoField,
+				Ui::InputField::Mode::MultiLine,
+				Tr::Value(
+					QString::fromUtf8("@username или ID (например: @durov, 12345678)..."),
+					u"@username or ID (e.g.: @durov, 12345678)..."_q),
+				MakuGram::Settings::instance().fullHiddenUsersRaw()),
+			st::boxRowPadding);
+		field->setFocus();
+		field->setMinHeight(130);
+
+		const auto enableToggle = box->addRow(
+			object_ptr<Ui::Checkbox>(
+				box,
+				Tr::Value(
+					QString::fromUtf8("Включить полное скрытие указанных пользователей"),
+					u"Enable full hiding for specified users"_q),
+				MakuGram::Settings::instance().fullHiddenUsersEnabled(),
+				st::defaultBoxCheckbox),
+			style::margins(
+				st::boxRowPadding.left(),
+				st::boxMediumSkip,
+				st::boxRowPadding.right(),
+				2),
+			style::al_justify);
+		enableToggle->setCursor(style::cur_pointer);
+		enableToggle->setAllowTextLines(0);
+		enableToggle->setCheckAlignment(style::al_topleft);
+
+		box->addButton(tr::lng_settings_save(), [=] {
+			MakuGram::Settings::instance().setFullHiddenUsersEnabled(enableToggle->checked());
+			MakuGram::Settings::instance().setFullHiddenUsersRaw(field->getLastText());
+			box->closeBox();
+			controller->showToast(Tr::Get(
+				QString::fromUtf8("Настройки сохранены"),
+				u"Settings saved"_q));
+		});
+		box->addButton(tr::lng_cancel(), [=] {
+			box->closeBox();
+		});
+	}));
+}
+
 void ShowMessagesBox(not_null<Window::SessionController*> controller) {
 	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setWidth(kBoxContentWidth);
@@ -574,6 +639,36 @@ void ShowPrivacyBox(not_null<Window::SessionController*> controller) {
 				st::boxMediumSkip));
 		hiddenUsersBtn->setClickedCallback([=] {
 			ShowHiddenUsersBox(controller);
+		});
+
+		AddCheckboxRow(
+			box,
+			Tr::Value(
+				QString::fromUtf8("Полное скрытие пользователей (исчезновение)"),
+				u"Full hide users (vanish)"_q),
+			MakuGram::Settings::instance().fullHiddenUsersEnabled(),
+			[=](bool checked) {
+				MakuGram::Settings::instance().setFullHiddenUsersEnabled(checked);
+			},
+			Tr::Value(
+				QString::fromUtf8("Полностью убирает выбранных пользователей из списка чатов, поиска и участников, а их сообщения и уведомления вообще не отображает (без блокировки в Telegram)."),
+				u"Completely removes selected users from the chat list, search, and member lists, and hides all their messages and notifications (without blocking them in Telegram)."_q),
+			0);
+
+		const auto fullHiddenUsersBtn = box->addRow(
+			object_ptr<Ui::RoundButton>(
+				box,
+				Tr::Value(
+					QString::fromUtf8("Настроить полностью скрытых пользователей..."),
+					u"Configure full-hidden users..."_q),
+				st::defaultBoxButton),
+			style::margins(
+				st::boxRowPadding.left(),
+				9,
+				st::boxRowPadding.right(),
+				st::boxMediumSkip));
+		fullHiddenUsersBtn->setClickedCallback([=] {
+			ShowFullHiddenUsersBox(controller);
 		});
 
 		AddCheckboxRow(

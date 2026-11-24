@@ -170,9 +170,12 @@ Settings::Settings() {
 	_tgWsProxyWorker = s.value("tgWsProxyWorker", QString()).toString();
 	_hiddenUsersEnabled = s.value("hiddenUsersEnabled", true).toBool();
 	_hiddenUsersRaw = s.value("hiddenUsersRaw", QString()).toString();
+	_fullHiddenUsersEnabled = s.value("fullHiddenUsersEnabled", true).toBool();
+	_fullHiddenUsersRaw = s.value("fullHiddenUsersRaw", QString()).toString();
 
 	parseSpamKeywords();
 	parseHiddenUsers();
+	parseFullHiddenUsers();
 
 	if (_tgWsProxyEnabled) {
 		TgWsProxy::instance().start();
@@ -1114,6 +1117,158 @@ bool Settings::isUserHidden(const PeerData *peer) const {
 
 rpl::producer<bool> Settings::hiddenUsersChanges() const {
 	return _hiddenUsersChanges.events();
+}
+
+void Settings::parseFullHiddenUsers() {
+	_fullHiddenUsers.clear();
+	const auto list = _fullHiddenUsersRaw.split(
+		QRegularExpression(u"[\\s,;\\n]+"_q),
+		Qt::SkipEmptyParts);
+	for (const auto &item : list) {
+		auto clean = item.trimmed().toLower();
+		if (clean.startsWith('@')) {
+			clean.remove(0, 1);
+		}
+		if (!clean.isEmpty() && !_fullHiddenUsers.contains(clean)) {
+			_fullHiddenUsers.append(clean);
+		}
+	}
+}
+
+bool Settings::fullHiddenUsersEnabled() const {
+	return _fullHiddenUsersEnabled;
+}
+
+void Settings::setFullHiddenUsersEnabled(bool enabled) {
+	if (_fullHiddenUsersEnabled != enabled) {
+		_fullHiddenUsersEnabled = enabled;
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("fullHiddenUsersEnabled", enabled);
+		_fullHiddenUsersEnabledChanges.fire_copy(enabled);
+		_fullHiddenUsersChanges.fire(true);
+	}
+}
+
+rpl::producer<bool> Settings::fullHiddenUsersEnabledChanges() const {
+	return _fullHiddenUsersEnabledChanges.events();
+}
+
+QString Settings::fullHiddenUsersRaw() const {
+	return _fullHiddenUsersRaw;
+}
+
+void Settings::setFullHiddenUsersRaw(const QString &raw) {
+	if (_fullHiddenUsersRaw != raw) {
+		_fullHiddenUsersRaw = raw;
+		parseFullHiddenUsers();
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("fullHiddenUsersRaw", raw);
+		_fullHiddenUsersChanges.fire(true);
+	}
+}
+
+QStringList Settings::fullHiddenUsersList() const {
+	return _fullHiddenUsers;
+}
+
+void Settings::addFullHiddenUser(const QString &usernameOrId) {
+	auto clean = usernameOrId.trimmed();
+	if (clean.isEmpty()) {
+		return;
+	}
+	auto raw = _fullHiddenUsersRaw.trimmed();
+	if (!raw.isEmpty()) {
+		raw += '\n';
+	}
+	raw += clean;
+	setFullHiddenUsersRaw(raw);
+}
+
+void Settings::removeFullHiddenUser(const QString &usernameOrId) {
+	auto clean = usernameOrId.trimmed().toLower();
+	if (clean.startsWith('@')) {
+		clean.remove(0, 1);
+	}
+	if (clean.isEmpty()) {
+		return;
+	}
+	const auto list = _fullHiddenUsersRaw.split(
+		QRegularExpression(u"[\\s,;\\n]+"_q),
+		Qt::SkipEmptyParts);
+	QStringList remaining;
+	for (const auto &item : list) {
+		auto itemClean = item.trimmed().toLower();
+		if (itemClean.startsWith('@')) {
+			itemClean.remove(0, 1);
+		}
+		if (itemClean != clean) {
+			remaining.append(item.trimmed());
+		}
+	}
+	setFullHiddenUsersRaw(remaining.join(u"\n"_q));
+}
+
+void Settings::toggleUserFullHidden(const PeerData *peer) {
+	if (!peer || peer->isSelf()) {
+		return;
+	}
+	const auto bareId = QString::number(peer->id.value);
+	const auto userRawId = QString::number(peer->id.value & PeerId::kChatTypeMask);
+	const auto uname = peer->rawUsername().trimmed().toLower();
+	if (isUserFullHidden(peer)) {
+		const auto list = _fullHiddenUsersRaw.split(
+			QRegularExpression(u"[\\s,;\\n]+"_q),
+			Qt::SkipEmptyParts);
+		QStringList remaining;
+		for (const auto &item : list) {
+			auto clean = item.trimmed().toLower();
+			if (clean.startsWith('@')) {
+				clean.remove(0, 1);
+			}
+			if (clean == userRawId || clean == bareId || (!uname.isEmpty() && clean == uname)) {
+				continue;
+			}
+			remaining.append(item.trimmed());
+		}
+		setFullHiddenUsersRaw(remaining.join(u"\n"_q));
+	} else {
+		const auto identifier = !uname.isEmpty()
+			? ('@' + uname)
+			: QString::number(peer->id.value & PeerId::kChatTypeMask);
+		addFullHiddenUser(identifier);
+	}
+}
+
+bool Settings::isUserFullHidden(const PeerData *peer) const {
+	if (!_fullHiddenUsersEnabled || !peer || peer->isSelf() || _fullHiddenUsers.isEmpty()) {
+		return false;
+	}
+	const auto bareId = QString::number(peer->id.value);
+	const auto userRawId = QString::number(peer->id.value & PeerId::kChatTypeMask);
+	const auto uname = peer->rawUsername().trimmed().toLower();
+
+	for (const auto &entry : _fullHiddenUsers) {
+		if (entry == userRawId || entry == bareId) {
+			return true;
+		}
+		if (!uname.isEmpty() && entry == uname) {
+			return true;
+		}
+		for (const auto &u : peer->usernames()) {
+			auto cleanU = u.trimmed().toLower();
+			if (cleanU.startsWith('@')) {
+				cleanU.remove(0, 1);
+			}
+			if (entry == cleanU) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+rpl::producer<bool> Settings::fullHiddenUsersChanges() const {
+	return _fullHiddenUsersChanges.events();
 }
 
 void BlurImageStrong(QImage &image) {

@@ -1367,6 +1367,35 @@ void AddToggleHiddenUserAction(
 	}, isHidden ? &st::menuIconShowInChat : &st::menuIconSpoiler);
 }
 
+void AddToggleFullHiddenUserAction(
+		not_null<Ui::PopupMenu*> menu,
+		const ContextMenuRequest &request,
+		not_null<ListWidget*> list) {
+	if (!request.selectedItems.empty()) {
+		return;
+	}
+	const auto item = request.item;
+	if (!item || item->isService()) {
+		return;
+	}
+	const auto from = item->from();
+	if (!from || !from->isUser() || from->isSelf()) {
+		return;
+	}
+	const auto isFullHidden = MakuGram::Settings::instance().isUserFullHidden(from);
+	const auto title = isFullHidden
+		? MakuGram::Tr::Get(QString::fromUtf8("Вернуть пользователя"), u"Restore hidden user"_q)
+		: MakuGram::Tr::Get(QString::fromUtf8("Полностью скрыть пользователя"), u"Full hide user"_q);
+	const auto controller = list->controller();
+	menu->addAction(title, [=] {
+		const auto willHide = !MakuGram::Settings::instance().isUserFullHidden(from);
+		MakuGram::Settings::instance().toggleUserFullHidden(from);
+		if (willHide && controller->activeChatCurrent().peer() == from) {
+			controller->clearSectionStack();
+		}
+	}, isFullHidden ? &st::menuIconShowInChat : &st::menuIconBlock);
+}
+
 bool AddClearSelectionAction(
 		not_null<Ui::PopupMenu*> menu,
 		const ContextMenuRequest &request,
@@ -1482,6 +1511,7 @@ void AddMessageActions(
 	AddReportAction(menu, request, list);
 	AddBlockSenderAction(menu, request, list);
 	AddToggleHiddenUserAction(menu, request, list);
+	AddToggleFullHiddenUserAction(menu, request, list);
 	if (request.item && request.selectedItems.empty()) {
 		AddEphemeralMessageActions(
 			menu,

@@ -144,6 +144,9 @@ bool IsSearchMessageHidden(const HistoryItem *item) {
 	if (!item) {
 		return false;
 	}
+	if (IsFullHiddenMessageHidden(item)) {
+		return true;
+	}
 	const auto &settings = Settings::instance();
 	if (!settings.filterSpamInSearch()) {
 		return false;
@@ -185,6 +188,30 @@ bool IsSearchMessageHidden(const HistoryItem *item) {
 
 bool IsUserHidden(const PeerData *peer) {
 	return Settings::instance().isUserHidden(peer);
+}
+
+bool IsUserFullHidden(const PeerData *peer) {
+	return Settings::instance().isUserFullHidden(peer);
+}
+
+bool IsFullHiddenMessageHidden(const HistoryItem *item) {
+	if (!item) {
+		return false;
+	}
+	if (IsUserFullHidden(item->from()) || IsUserFullHidden(item->author())) {
+		return true;
+	}
+	if (const auto bot = item->viaBot()) {
+		if (IsUserFullHidden(bot)) {
+			return true;
+		}
+	}
+	if (const auto history = item->history()) {
+		if (IsUserFullHidden(history->peer)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 TextWithEntities MaskHiddenUserMentions(const TextWithEntities &text) {

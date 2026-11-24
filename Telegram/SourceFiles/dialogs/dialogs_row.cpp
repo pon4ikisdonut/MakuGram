@@ -394,8 +394,15 @@ void BasicRow::paintUserpic(
 	PaintUserpic(p, entry, peer, videoUserpic, _userpic, context);
 }
 
+bool Row::isFullHidden() const {
+	const auto peer = _id.peer();
+	return peer && MakuGram::Settings::instance().isUserFullHidden(peer);
+}
+
 Row::Row(Key key, int index, int top) : _id(key), _top(top), _index(index) {
-	if (MakuGram::Settings::instance().compactChatList()) {
+	if (isFullHidden()) {
+		_height = 0;
+	} else if (MakuGram::Settings::instance().compactChatList()) {
 		_height = 42;
 	}
 	if (const auto history = key.history()) {
@@ -426,6 +433,10 @@ const style::DialogRow &Row::ComputeSt(
 }
 
 void Row::recountHeight(float64 narrowRatio, FilterId filterId) {
+	if (isFullHidden()) {
+		_height = 0;
+		return;
+	}
 	if (MakuGram::Settings::instance().compactChatList()) {
 		_height = 42;
 		return;

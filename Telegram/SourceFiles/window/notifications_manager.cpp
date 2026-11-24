@@ -364,7 +364,12 @@ System::SkipState System::computeSkipState(
 		|| MakuGram::IsUserHidden(item->author())
 		|| MakuGram::IsUserHidden(item->history()->peer)
 		|| MakuGram::IsUserHidden(notifyBy)
-		|| MakuGram::IsUserHidden(notification.reactionOrVoteSender)) {
+		|| MakuGram::IsUserHidden(notification.reactionOrVoteSender)
+		|| MakuGram::IsUserFullHidden(item->from())
+		|| MakuGram::IsUserFullHidden(item->author())
+		|| MakuGram::IsUserFullHidden(item->history()->peer)
+		|| MakuGram::IsUserFullHidden(notifyBy)
+		|| MakuGram::IsUserFullHidden(notification.reactionOrVoteSender)) {
 		return { SkipState::Skip };
 	}
 	if (Core::Quitting()) {
@@ -840,7 +845,7 @@ void System::showNext() {
 		while (!i->second.empty() && i->second.begin()->first <= ms) {
 			const auto thread = i->first;
 			const auto from = i->second.begin()->second.notifyBy;
-			if (MakuGram::IsUserHidden(from)) {
+			if (MakuGram::IsUserHidden(from) || MakuGram::IsUserFullHidden(from)) {
 				i->second.erase(i->second.begin());
 				continue;
 			}
@@ -959,7 +964,11 @@ void System::showNext() {
 		if (MakuGram::IsUserHidden(notifyItem->from())
 			|| MakuGram::IsUserHidden(notifyItem->author())
 			|| MakuGram::IsUserHidden(notifyItem->history()->peer)
-			|| MakuGram::IsUserHidden(notify->reactionOrVoteSender)) {
+			|| MakuGram::IsUserHidden(notify->reactionOrVoteSender)
+			|| MakuGram::IsUserFullHidden(notifyItem->from())
+			|| MakuGram::IsUserFullHidden(notifyItem->author())
+			|| MakuGram::IsUserFullHidden(notifyItem->history()->peer)
+			|| MakuGram::IsUserFullHidden(notify->reactionOrVoteSender)) {
 			not_null(notifyThread)->skipNotification();
 			continue;
 		}

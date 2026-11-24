@@ -525,6 +525,7 @@ private:
 	void addToggleNoForwards();
 	void addBlockUser();
 	void addToggleHiddenUser();
+	void addToggleFullHiddenUser();
 	void addBanFromChannel();
 	void addViewDiscussion();
 	void addDirectMessages();
@@ -1327,6 +1328,29 @@ void Filler::addToggleHiddenUser() {
 	_addAction(text, [=] {
 		MakuGram::Settings::instance().toggleUserHidden(user);
 	}, isHidden ? &st::menuIconShowInChat : &st::menuIconSpoiler);
+}
+
+void Filler::addToggleFullHiddenUser() {
+	const auto user = _peer->asUser();
+	if (!user
+		|| user->isInaccessible()
+		|| user->isSelf()
+		|| user->isRepliesChat()
+		|| user->isVerifyCodes()) {
+		return;
+	}
+	const auto isFullHidden = MakuGram::Settings::instance().isUserFullHidden(user);
+	const auto text = isFullHidden
+		? MakuGram::Tr::Get(QString::fromUtf8("Вернуть пользователя"), u"Restore hidden user"_q)
+		: MakuGram::Tr::Get(QString::fromUtf8("Полностью скрыть пользователя"), u"Full hide user"_q);
+	const auto controller = _controller;
+	_addAction(text, [=] {
+		const auto willHide = !MakuGram::Settings::instance().isUserFullHidden(user);
+		MakuGram::Settings::instance().toggleUserFullHidden(user);
+		if (willHide && controller->activeChatCurrent().peer() == user) {
+			controller->clearSectionStack();
+		}
+	}, isFullHidden ? &st::menuIconShowInChat : &st::menuIconBlock);
 }
 
 void Filler::addBanFromChannel() {
@@ -2281,6 +2305,7 @@ void Filler::fillContextMenuActions() {
 			addBlockUser();
 		}
 		addToggleHiddenUser();
+		addToggleFullHiddenUser();
 	}
 	addBanFromChannel();
 	addClearHistory();
@@ -2342,6 +2367,7 @@ void Filler::fillProfileActions() {
 	addToggleFolder();
 	addBlockUser();
 	addToggleHiddenUser();
+	addToggleFullHiddenUser();
 	addBanFromChannel();
 	addReport();
 	addLeaveChat();
