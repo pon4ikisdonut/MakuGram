@@ -29,6 +29,7 @@ a custom Telegram Desktop client fork.
 #include "ui/widgets/labels.h"
 #include "ui/wrap/vertical_layout.h"
 #include "window/window_session_controller.h"
+#include <QtCore/QPointer>
 
 namespace Settings {
 namespace {
@@ -690,6 +691,151 @@ void ShowPrivacyBox(not_null<Window::SessionController*> controller) {
 	}));
 }
 
+void ShowNewbiePeriodBox(
+		not_null<Window::SessionController*> controller,
+		Fn<void()> onSaved = nullptr) {
+	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+		box->setWidth(kBoxContentWidth);
+		box->setMaxHeight(kBoxMaxHeight);
+		box->setTitle(Tr::Value(
+			QString::fromUtf8("Период статуса «Новичок»"),
+			u"Newbie status period"_q));
+
+		box->addRow(
+			object_ptr<Ui::FlatLabel>(
+				box,
+				Tr::Value(
+					QString::fromUtf8(
+						"Выберите срок пребывания в чате, в течение которого участник считается новичком, или укажите своё количество дней:"),
+					u"Choose how long a member is considered a newbie after joining a chat, or enter a custom number of days:"_q),
+				st::boxLabel),
+			st::boxRowPadding);
+
+		struct Preset {
+			int days;
+			QString ru;
+			QString en;
+		};
+		const std::vector<Preset> presets = {
+			{ 1, QString::fromUtf8("1 день"), u"1 day"_q },
+			{ 7, QString::fromUtf8("7 дней (1 неделя)"), u"7 days (1 week)"_q },
+			{ 14, QString::fromUtf8("14 дней (2 недели)"), u"14 days (2 weeks)"_q },
+			{ 30, QString::fromUtf8("30 дней (1 месяц)"), u"30 days (1 month)"_q },
+			{ 90, QString::fromUtf8("90 дней (3 месяца)"), u"90 days (3 months)"_q },
+			{ 180, QString::fromUtf8("180 дней (полгода)"), u"180 days (6 months)"_q },
+			{ 365, QString::fromUtf8("365 дней (1 год)"), u"365 days (1 year)"_q },
+			{ 0, QString::fromUtf8("Свой срок (в днях)"), u"Custom period (days)"_q },
+		};
+
+		const auto currentDays = MakuGram::Settings::instance().newbiePeriodDays();
+		auto initialGroup = 0;
+		for (const auto &p : presets) {
+			if (p.days > 0 && p.days == currentDays) {
+				initialGroup = p.days;
+				break;
+			}
+		}
+
+		const auto group = std::make_shared<Ui::RadiobuttonGroup>(initialGroup);
+		const auto syncing = std::make_shared<bool>(false);
+
+		box->addSkip(st::boxMediumSkip);
+		for (const auto &p : presets) {
+			const auto radio = box->addRow(
+				object_ptr<Ui::Radiobutton>(
+					box,
+					group,
+					p.days,
+					Tr::Get(p.ru, p.en),
+					st::defaultBoxCheckbox),
+				style::margins(
+					st::boxRowPadding.left(),
+					4,
+					st::boxRowPadding.right(),
+					4));
+			radio->setCursor(style::cur_pointer);
+		}
+
+		const auto customField = box->addRow(
+			object_ptr<Ui::InputField>(
+				box,
+				st::defaultInputField,
+				Tr::Value(
+					QString::fromUtf8("Количество дней (1–36500)"),
+					u"Number of days (1–36500)"_q),
+				QString::number(currentDays)),
+			style::margins(
+				st::boxRowPadding.left(),
+				st::boxMediumSkip,
+				st::boxRowPadding.right(),
+				st::boxMediumSkip));
+
+		group->setChangedCallback([=](int value) {
+			if (*syncing) {
+				return;
+			}
+			*syncing = true;
+			if (value > 0) {
+				customField->setText(QString::number(value));
+			} else {
+				customField->setFocus();
+			}
+			*syncing = false;
+		});
+
+		customField->changes(
+		) | rpl::on_next([=] {
+			if (*syncing) {
+				return;
+			}
+			*syncing = true;
+			bool ok = false;
+			const auto typed = customField->getLastText().trimmed().toInt(&ok);
+			auto matched = 0;
+			if (ok && typed > 0) {
+				for (const auto &p : presets) {
+					if (p.days > 0 && p.days == typed) {
+						matched = p.days;
+						break;
+					}
+				}
+			}
+			group->setValue(matched);
+			*syncing = false;
+		}, customField->lifetime());
+
+		const auto saveAndClose = [=] {
+			auto days = group->current();
+			if (days <= 0) {
+				bool ok = false;
+				days = customField->getLastText().trimmed().toInt(&ok);
+				if (!ok || days < 1) {
+					customField->showError();
+					return;
+				}
+			}
+			MakuGram::Settings::instance().setNewbiePeriodDays(days);
+			if (onSaved) {
+				onSaved();
+			}
+			box->closeBox();
+			controller->showToast(Tr::Get(
+				QString::fromUtf8("Настройки сохранены"),
+				u"Settings saved"_q));
+		};
+
+		customField->submits(
+		) | rpl::on_next([=] {
+			saveAndClose();
+		}, customField->lifetime());
+
+		box->addButton(tr::lng_settings_save(), saveAndClose);
+		box->addButton(tr::lng_cancel(), [=] {
+			box->closeBox();
+		});
+	}));
+}
+
 void ShowModerationBox(not_null<Window::SessionController*> controller) {
 	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setWidth(kBoxContentWidth);
@@ -747,8 +893,34 @@ void ShowModerationBox(not_null<Window::SessionController*> controller) {
 				MakuGram::Settings::instance().setShowNewbieBadge(checked);
 			},
 			Tr::Value(
-				QString::fromUtf8("Отображать бейдж \"Новичок\" рядом с именем участников, состоящих в чате меньше 3 месяцев."),
-				u"Show \"Newbie\" badge next to members who joined the chat less than 3 months ago."_q));
+				QString::fromUtf8("Отображать бейдж \"Новичок\" рядом с именем участников, состоящих в чате меньше заданного периода (по умолчанию 90 дн.)."),
+				u"Show \"Newbie\" badge next to members who joined the chat less than the configured period ago (default: 90 days)."_q),
+			0);
+
+		const auto newbieBtnText = [] {
+			const auto days = MakuGram::Settings::instance().newbiePeriodDays();
+			return Tr::Value(
+				QString::fromUtf8("Настроить период новичка (%1 дн.)...").arg(days),
+				QString::fromUtf8("Configure newbie period (%1 d)...").arg(days));
+		};
+		const auto newbiePeriodBtn = box->addRow(
+			object_ptr<Ui::RoundButton>(
+				box,
+				newbieBtnText(),
+				st::defaultBoxButton),
+			style::margins(
+				st::boxRowPadding.left(),
+				9,
+				st::boxRowPadding.right(),
+				st::boxMediumSkip));
+		const auto weakNewbieBtn = QPointer<Ui::RoundButton>(newbiePeriodBtn);
+		newbiePeriodBtn->setClickedCallback([=] {
+			ShowNewbiePeriodBox(controller, [=] {
+				if (const auto btn = weakNewbieBtn.data()) {
+					btn->setText(newbieBtnText());
+				}
+			});
+		});
 
 		box->addButton(tr::lng_close(), [=] {
 			box->closeBox();
@@ -1227,7 +1399,7 @@ void BuildMakuGramSection(SectionBuilder &builder) {
 		.title = Tr::Value(QString::fromUtf8("Модерация чатов"), u"Chat Moderation"_q),
 		.icon = { &st::menuIconAdmin },
 		.onClick = [=] { ShowModerationBox(controller); },
-		.keywords = { u"moderation"_q, u"ban"_q, u"badge"_q, u"requests"_q, u"search"_q, u"бан"_q, u"новичок"_q, u"заявки"_q, u"модерация"_q, u"поиск"_q },
+		.keywords = { u"moderation"_q, u"ban"_q, u"badge"_q, u"requests"_q, u"search"_q, u"newbie"_q, u"period"_q, u"days"_q, u"бан"_q, u"новичок"_q, u"период"_q, u"срок"_q, u"дни"_q, u"заявки"_q, u"модерация"_q, u"поиск"_q },
 	});
 
 	builder.addButton({

@@ -736,6 +736,10 @@ ListWidget::ListWidget(
 		MakuGram::Settings::instance().hiddenUsersChanges()
 			| rpl::to_empty,
 		MakuGram::Settings::instance().fullHiddenUsersChanges()
+			| rpl::to_empty,
+		MakuGram::Settings::instance().showNewbieBadgeChanges()
+			| rpl::to_empty,
+		MakuGram::Settings::instance().newbiePeriodDaysChanges()
 			| rpl::to_empty
 	) | rpl::on_next([=] {
 		crl::on_main(this, [=] {

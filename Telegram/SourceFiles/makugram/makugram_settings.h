@@ -81,6 +81,10 @@ public:
 	void setShowNewbieBadge(bool enabled);
 	[[nodiscard]] rpl::producer<bool> showNewbieBadgeChanges() const;
 
+	[[nodiscard]] int newbiePeriodDays() const;
+	void setNewbiePeriodDays(int days);
+	[[nodiscard]] rpl::producer<int> newbiePeriodDaysChanges() const;
+
 	[[nodiscard]] bool showProfileDetails() const;
 	void setShowProfileDetails(bool enabled);
 	[[nodiscard]] rpl::producer<bool> showProfileDetailsChanges() const;
@@ -249,6 +253,7 @@ private:
 	std::vector<QString> _spamKeywordsList;
 	std::vector<SpamPattern> _spamPatterns;
 	bool _showNewbieBadge = false;
+	int _newbiePeriodDays = 90;
 	bool _showProfileDetails = true;
 	bool _ghostMode = false;
 	bool _ghostHideOnline = false;
@@ -295,6 +300,7 @@ private:
 	rpl::event_stream<bool> _filterSpamInSearchChanges;
 	rpl::event_stream<QString> _spamKeywordsChanges;
 	rpl::event_stream<bool> _showNewbieBadgeChanges;
+	rpl::event_stream<int> _newbiePeriodDaysChanges;
 	rpl::event_stream<bool> _showProfileDetailsChanges;
 	rpl::event_stream<bool> _ghostModeChanges;
 	rpl::event_stream<bool> _ghostHideOnlineChanges;

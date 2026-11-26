@@ -139,6 +139,7 @@ Settings::Settings() {
 	_filterSpamInSearch = s.value("filterSpamInSearch", false).toBool();
 	_spamKeywords = s.value("spamKeywords", QString()).toString();
 	_showNewbieBadge = s.value("showNewbieBadge", false).toBool();
+	_newbiePeriodDays = qBound(1, s.value("newbiePeriodDays", 90).toInt(), 36500);
 	_showProfileDetails = s.value("showProfileDetails", true).toBool();
 	_ghostMode = s.value("ghostMode", false).toBool();
 	_ghostHideOnline = s.value("ghostHideOnline", false).toBool();
@@ -400,6 +401,24 @@ void Settings::setShowNewbieBadge(bool enabled) {
 
 rpl::producer<bool> Settings::showNewbieBadgeChanges() const {
 	return _showNewbieBadgeChanges.events();
+}
+
+int Settings::newbiePeriodDays() const {
+	return _newbiePeriodDays;
+}
+
+void Settings::setNewbiePeriodDays(int days) {
+	days = qBound(1, days, 36500);
+	if (_newbiePeriodDays != days) {
+		_newbiePeriodDays = days;
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("newbiePeriodDays", days);
+		_newbiePeriodDaysChanges.fire_copy(days);
+	}
+}
+
+rpl::producer<int> Settings::newbiePeriodDaysChanges() const {
+	return _newbiePeriodDaysChanges.events();
 }
 
 bool Settings::showProfileDetails() const {
