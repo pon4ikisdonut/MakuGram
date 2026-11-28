@@ -19,6 +19,7 @@ a custom Telegram Desktop client fork.
 #include <QtCore/QDateTime>
 #include <QtCore/QSettings>
 #include <QtCore/QStringList>
+#include <QtCore/QTimer>
 #include <QtCore/QVariantMap>
 
 namespace MakuGram {
@@ -254,7 +255,9 @@ Settings::Settings() {
 	parseFullHiddenUsers();
 
 	if (_tgWsProxyEnabled) {
-		TgWsProxy::instance().start();
+		QTimer::singleShot(0, &TgWsProxy::instance(), [] {
+			TgWsProxy::instance().start();
+		});
 	}
 }
 
