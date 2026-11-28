@@ -75,8 +75,7 @@ constexpr auto kBoxMaxHeight = 690;
 		auto st = st::defaultActiveButton;
 		st.height = 36;
 		st.width = 36;
-		st.textTop = 7;
-		st.style = st::semiboldTextStyle;
+		st.padding = QMargins();
 		return st;
 	}();
 	return result;
@@ -378,11 +377,26 @@ void ShowHiddenUsersManagerBox(
 
 		const auto addBtn = Ui::CreateChild<Ui::RoundButton>(
 			inputRow,
-			rpl::single(u"+"_q),
+			rpl::single(QString()),
 			AddPlusButtonStyle());
 		addBtn->setFullRadius(true);
 
 		constexpr auto kAddBtnSize = 36;
+		const auto plusIcon = Ui::CreateChild<Ui::RpWidget>(addBtn);
+		plusIcon->setAttribute(Qt::WA_TransparentForMouseEvents);
+		plusIcon->resize(kAddBtnSize, kAddBtnSize);
+		plusIcon->paintRequest() | rpl::on_next([=] {
+			auto p = QPainter(plusIcon);
+			auto hq = PainterHighQualityEnabler(p);
+			p.setPen(QPen(st::activeButtonFg->c, 2.0, Qt::SolidLine, Qt::RoundCap));
+			const auto cx = plusIcon->width() / 2.0;
+			const auto cy = plusIcon->height() / 2.0;
+			constexpr auto kArm = 6.0;
+			p.drawLine(QPointF(cx - kArm, cy), QPointF(cx + kArm, cy));
+			p.drawLine(QPointF(cx, cy - kArm), QPointF(cx, cy + kArm));
+		}, plusIcon->lifetime());
+		plusIcon->show();
+
 		const auto layoutInputRow = [=] {
 			const auto w = inputRow->width();
 			if (w <= 0) {
@@ -395,6 +409,7 @@ void ShowHiddenUsersManagerBox(
 			field->moveToLeft(0, std::max(0, (rowHeight - field->height()) / 2));
 			addBtn->resize(kAddBtnSize, kAddBtnSize);
 			addBtn->moveToRight(0, std::max(0, (rowHeight - kAddBtnSize) / 2));
+			plusIcon->resize(kAddBtnSize, kAddBtnSize);
 		};
 		inputRow->widthValue() | rpl::on_next([=](int) {
 			layoutInputRow();
@@ -493,6 +508,7 @@ void ShowHiddenUsersManagerBox(
 					card,
 					st::boxTitleClose);
 				removeBtn->setCursor(style::cur_pointer);
+				removeBtn->show();
 				removeBtn->setClickedCallback([=] {
 					sharedConfig->removeEntry(idText);
 				});

@@ -750,6 +750,7 @@ ListWidget::ListWidget(
 				}
 				const auto old = _slice;
 				refreshRows(old);
+				updateSize();
 			}
 			update();
 		});

@@ -6,6 +6,9 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_reply.h"
+#include "makugram/makugram_filter.h"
+#include "makugram/makugram_lang.h"
+#include "makugram/makugram_settings.h"
 
 #include "core/click_handler_types.h"
 #include "core/ui_integration.h"
@@ -405,17 +408,25 @@ void Reply::update(
 		: (messagePoll && fields.pollOption.isEmpty())
 		? &messagePoll->attachedMedia
 		: nullptr;
-	const auto hasPreview = (story && story->hasReplyPreview())
-		|| (message
-			&& message->media()
-			&& message->media()->hasReplyPreview())
-		|| (externalMedia && externalMedia->hasReplyPreview())
-		|| (pollMediaPtr
-			&& (pollMediaPtr->photo || pollMediaPtr->document));
+	const auto replySender = this->sender(view, data);
+	const auto isFullHiddenReply = MakuGram::IsFullHiddenMessageHidden(message)
+		|| MakuGram::IsUserFullHidden(replySender);
+	const auto isPartialHiddenReply = !isFullHiddenReply
+		&& (MakuGram::IsUserHidden(replySender)
+			|| (message && message->from() && MakuGram::IsUserHidden(message->from())));
+	const auto hasPreview = (!isFullHiddenReply && !isPartialHiddenReply)
+		&& ((story && story->hasReplyPreview())
+			|| (message
+				&& message->media()
+				&& message->media()->hasReplyPreview())
+			|| (externalMedia && externalMedia->hasReplyPreview())
+			|| (pollMediaPtr
+				&& (pollMediaPtr->photo || pollMediaPtr->document)));
 	_hasPreview = hasPreview ? 1 : 0;
 	_displaying = data->displaying() ? 1 : 0;
 	_multiline = data->multiline() ? 1 : 0;
-	const auto hasQuoteIcon = _displaying
+	const auto hasQuoteIcon = !isFullHiddenReply
+		&& _displaying
 		&& fields.manualQuote
 		&& !quote.empty();
 	_hasQuoteIcon = hasQuoteIcon ? 1 : 0;
@@ -425,7 +436,13 @@ void Reply::update(
 		.session = &view->history()->session(),
 		.repaint = repaint,
 	}));
-	const auto text = (!_displaying && data->unavailable())
+	auto text = (isFullHiddenReply || isPartialHiddenReply)
+		? TextWithEntities{
+			.text = MakuGram::Tr::Get(
+				QString::fromUtf8("Сообщение скрыто"),
+				u"Message hidden"_q),
+		}
+		: (!_displaying && data->unavailable())
 		? TextWithEntities()
 		: task
 		? Ui::Text::Colorized(task->completionDate
@@ -606,6 +623,11 @@ QString Reply::senderName(
 QString Reply::senderName(
 		not_null<PeerData*> peer,
 		bool shorten) const {
+	if (MakuGram::IsUserFullHidden(peer) || MakuGram::IsUserHidden(peer)) {
+		return MakuGram::Tr::Get(
+			QString::fromUtf8("Скрытый пользователь"),
+			u"Hidden User"_q);
+	}
 	const auto user = shorten ? peer->asUser() : nullptr;
 	return user ? user->firstName : peer->name();
 }
