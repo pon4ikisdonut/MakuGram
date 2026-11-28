@@ -65,6 +65,7 @@ void SendProgressManager::update(
 		MsgId topMsgId,
 		SendProgressType type,
 		int progress) {
+	// блокируем отправку статуса набора текста и выбора стикеров в режиме невидимки
 	if (MakuGram::Settings::instance().hideTypingStatus()) {
 		if (type != SendProgressType::Speaking) {
 			return;

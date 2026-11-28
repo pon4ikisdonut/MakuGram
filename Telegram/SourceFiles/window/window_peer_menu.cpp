@@ -53,6 +53,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/toast/toast.h"
 #include "ui/text/format_values.h"
 #include "ui/text/text_utilities.h"
+#include "makugram/makugram_lang.h"
+#include "makugram/makugram_settings.h"
 #include "ui/widgets/chat_filters_tabs_strip.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/checkbox.h"
@@ -523,6 +525,7 @@ private:
 	void addThemeEdit();
 	void addToggleNoForwards();
 	void addBlockUser();
+	void addToggleFullHiddenUser();
 	void addBanFromChannel();
 	void addViewDiscussion();
 	void addDirectMessages();
@@ -1307,6 +1310,29 @@ void Filler::addBlockUser() {
 	if (user->blockStatus() == UserData::BlockStatus::Unknown) {
 		user->session().api().requestFullPeer(user);
 	}
+}
+
+void Filler::addToggleFullHiddenUser() {
+	const auto user = _peer->asUser();
+	if (!user
+		|| user->isInaccessible()
+		|| user->isSelf()
+		|| user->isRepliesChat()
+		|| user->isVerifyCodes()) {
+		return;
+	}
+	const auto isFullHidden = MakuGram::Settings::instance().isUserFullHidden(user);
+	const auto text = isFullHidden
+		? MakuGram::Tr::Get(QString::fromUtf8("Убрать из полностью скрытых"), u"Remove from Full Hide"_q)
+		: MakuGram::Tr::Get(QString::fromUtf8("Скрыть пользователя полностью"), u"Full Hide User"_q);
+	const auto controller = _controller;
+	_addAction(text, [=] {
+		const auto willHide = !MakuGram::Settings::instance().isUserFullHidden(user);
+		MakuGram::Settings::instance().toggleUserFullHidden(user);
+		if (willHide && controller->activeChatCurrent().peer() == user) {
+			controller->clearSectionStack();
+		}
+	}, isFullHidden ? &st::menuIconShowInChat : &st::menuIconBlock);
 }
 
 void Filler::addBanFromChannel() {
@@ -2260,6 +2286,7 @@ void Filler::fillContextMenuActions() {
 		if (!user->isContact()) {
 			addBlockUser();
 		}
+		addToggleFullHiddenUser();
 	}
 	addBanFromChannel();
 	addClearHistory();
@@ -2320,6 +2347,7 @@ void Filler::fillProfileActions() {
 	addToggleNoForwards();
 	addToggleFolder();
 	addBlockUser();
+	addToggleFullHiddenUser();
 	addBanFromChannel();
 	addReport();
 	addLeaveChat();

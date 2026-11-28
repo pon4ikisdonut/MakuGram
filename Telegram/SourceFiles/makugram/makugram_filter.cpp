@@ -131,9 +131,37 @@ bool IsSpamKeywordMessageHidden(const HistoryItem *item) {
 	return false;
 }
 
+bool IsUserFullHidden(const PeerData *peer) {
+	if (!peer || !peer->isUser()) {
+		return false;
+	}
+	const auto &settings = Settings::instance();
+	if (!settings.fullHiddenUsersEnabled()) {
+		return false;
+	}
+	return settings.isUserFullHidden(peer);
+}
+
+bool IsFullHiddenMessageHidden(const HistoryItem *item) {
+	if (!item) {
+		return false;
+	}
+	const auto from = item->from();
+	if (!from || !from->isUser()) {
+		return false;
+	}
+	if (item->out()) {
+		return false;
+	}
+	return IsUserFullHidden(from);
+}
+
 bool IsSearchMessageHidden(const HistoryItem *item) {
 	if (!item) {
 		return false;
+	}
+	if (IsFullHiddenMessageHidden(item)) {
+		return true;
 	}
 	const auto &settings = Settings::instance();
 	if (!settings.filterSpamInSearch()) {

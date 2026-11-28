@@ -414,7 +414,7 @@ void BuildSectionButtons(SectionBuilder &builder) {
 		.title = MakuGram::Tr::Value(QString::fromUtf8("Функции MakuGram"), u"MakuGram Features"_q),
 		.targetSection = MakuGramId(),
 		.icon = { &st::menuIconManage },
-		.keywords = { u"makugram"_q, u"maku"_q, u"features"_q, u"функции"_q, u"блокировка"_q, u"заявки"_q },
+		.keywords = { u"makugram"_q, u"maku"_q, u"features"_q, u"функции"_q, u"блокировка"_q, u"заявки"_q, u"прокси"_q, u"призрак"_q, u"ghost"_q, u"proxy"_q, u"hidden"_q, u"скрытые"_q },
 	});
 
 	builder.addSectionButton({

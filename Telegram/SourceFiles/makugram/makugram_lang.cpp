@@ -10,7 +10,10 @@ namespace MakuGram::Tr {
 
 bool IsRussian() {
 	const auto id = ::Lang::Id();
-	return id.startsWith(u"ru"_q, Qt::CaseInsensitive);
+	return id.isEmpty()
+		|| id.startsWith(u"ru"_q, Qt::CaseInsensitive)
+		|| id.startsWith(u"be"_q, Qt::CaseInsensitive)
+		|| id.startsWith(u"uk"_q, Qt::CaseInsensitive);
 }
 
 QString Get(const QString &ru, const QString &en) {

@@ -4,18 +4,25 @@ a custom Telegram Desktop client fork.
 */
 #include "makugram/makugram_details.h"
 #include "makugram/makugram_lang.h"
+#include "makugram/makugram_settings.h"
 
 #include "data/data_peer.h"
 #include "data/data_user.h"
 #include "base/unixtime.h"
-#include <map>
+#include <unordered_map>
 #include <mutex>
 
 namespace MakuGram {
 namespace {
 
+struct PairHash {
+	size_t operator()(const std::pair<uint64, uint64> &p) const noexcept {
+		return std::hash<uint64>()(p.first) ^ (std::hash<uint64>()(p.second) + 0x9e3779b97f4a7c15ULL + (std::hash<uint64>()(p.first) << 6) + (std::hash<uint64>()(p.first) >> 2));
+	}
+};
+
 std::mutex gJoinDatesMutex;
-std::map<std::pair<uint64, uint64>, TimeId> gJoinDates;
+std::unordered_map<std::pair<uint64, uint64>, TimeId, PairHash> gJoinDates;
 
 } // namespace
 
@@ -61,15 +68,16 @@ bool IsNewbieInChat(const PeerData *peer, const UserData *user) {
 
 	const auto joinDate = [&]() -> TimeId {
 		const auto lock = std::lock_guard(gJoinDatesMutex);
+		if (gJoinDates.empty()) return 0;
 		const auto it = gJoinDates.find({peerId, userId});
 		return (it != gJoinDates.end()) ? it->second : TimeId(0);
 	}();
 
 	const auto now = base::unixtime::now();
-	constexpr auto kThreeMonths = 90 * 86400;
+	const auto periodSeconds = int64(Settings::instance().newbiePeriodDays()) * 86400LL;
 
 	if (joinDate > 0) {
-		return (now - joinDate) < kThreeMonths;
+		return (int64(now) - int64(joinDate)) < periodSeconds;
 	}
 
 	const auto rawUserId = userId & 0xFFFFFFFFULL;

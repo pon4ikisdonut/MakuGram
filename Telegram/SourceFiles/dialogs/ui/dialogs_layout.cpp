@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/ui/dialogs_layout.h"
 #include "makugram/makugram_settings.h"
+#include "makugram/makugram_filter.h"
 
 #include "base/options.h"
 #include "base/unixtime.h"
@@ -1157,7 +1158,10 @@ void RowPainter::Paint(
 	const auto peer = history ? history->peer.get() : nullptr;
 	const auto badgesState = entry->chatListBadgesState();
 	entry->chatListPreloadData(); // Allow chat list message resolve.
-	const auto item = entry->chatListMessage();
+	const auto rawItem = entry->chatListMessage();
+	const auto item = (rawItem && !MakuGram::IsFullHiddenMessageHidden(rawItem))
+		? rawItem
+		: nullptr;
 	const auto cloudDraft = [&]() -> const Data::Draft*{
 		if (!thread) {
 			return nullptr;
@@ -1238,7 +1242,7 @@ void RowPainter::Paint(
 				color,
 				context.now)
 			: false;
-		const auto view = actionWasPainted
+		const auto view = (actionWasPainted || !item)
 			? nullptr
 			: thread
 			? &thread->lastItemDialogsView()

@@ -1761,8 +1761,8 @@ void MainWidget::showHistory(
 bool MainWidget::handleDrawToReplyRequest(Data::DrawToReplyRequest request) {
 	if (_mainSection) {
 		using namespace HistoryView;
-		if (const auto с = dynamic_cast<ChatWidget*>(_mainSection.data())) {
-			return с->handleDrawToReplyRequest(std::move(request));
+		if (const auto c = dynamic_cast<ChatWidget*>(_mainSection.data())) {
+			return c->handleDrawToReplyRequest(std::move(request));
 		}
 		return false;
 	}

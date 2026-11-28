@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/peers/edit_participants_box.h"
+#include "makugram/makugram_filter.h"
 
 #include "api/api_chat_participants.h"
 #include "boxes/peers/edit_participant_box.h"
@@ -2454,6 +2455,10 @@ bool ParticipantsBoxController::removeRow(not_null<PeerData*> participant) {
 
 std::unique_ptr<PeerListRow> ParticipantsBoxController::createRow(
 		not_null<PeerData*> participant) const {
+	if ((_role == Role::Members || _role == Role::Profile)
+		&& MakuGram::IsUserFullHidden(participant)) {
+		return nullptr;
+	}
 	if (_role == Role::Profile) {
 		Assert(participant->asUser() != nullptr);
 	}

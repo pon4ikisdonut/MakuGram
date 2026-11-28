@@ -53,6 +53,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/controls/delete_message_context_action.h"
 #include "ui/controls/who_reacted_context_action.h"
 #include "ui/delayed_activation.h"
+#include "makugram/makugram_lang.h"
+#include "makugram/makugram_settings.h"
 #include "ui/dynamic_image.h"
 #include "ui/dynamic_thumbnails.h"
 #include "ui/boxes/edit_factcheck_box.h"
@@ -1340,6 +1342,35 @@ void AddBlockSenderAction(
 	}), &st::menuIconBlock);
 }
 
+void AddToggleFullHiddenUserAction(
+		not_null<Ui::PopupMenu*> menu,
+		const ContextMenuRequest &request,
+		not_null<ListWidget*> list) {
+	if (!request.selectedItems.empty()) {
+		return;
+	}
+	const auto item = request.item;
+	if (!item || item->isService()) {
+		return;
+	}
+	const auto from = item->from();
+	if (!from || !from->isUser() || from->isSelf()) {
+		return;
+	}
+	const auto isFullHidden = MakuGram::Settings::instance().isUserFullHidden(from);
+	const auto title = isFullHidden
+		? MakuGram::Tr::Get(QString::fromUtf8("Убрать из полностью скрытых"), u"Remove from Full Hide"_q)
+		: MakuGram::Tr::Get(QString::fromUtf8("Скрыть пользователя полностью"), u"Full Hide User"_q);
+	const auto controller = list->controller();
+	menu->addAction(title, [=] {
+		const auto willHide = !MakuGram::Settings::instance().isUserFullHidden(from);
+		MakuGram::Settings::instance().toggleUserFullHidden(from);
+		if (willHide && controller->activeChatCurrent().peer() == from) {
+			controller->clearSectionStack();
+		}
+	}, isFullHidden ? &st::menuIconShowInChat : &st::menuIconBlock);
+}
+
 bool AddClearSelectionAction(
 		not_null<Ui::PopupMenu*> menu,
 		const ContextMenuRequest &request,
@@ -1454,6 +1485,7 @@ void AddMessageActions(
 	AddSaveRichHtmlAction(menu, request, list);
 	AddReportAction(menu, request, list);
 	AddBlockSenderAction(menu, request, list);
+	AddToggleFullHiddenUserAction(menu, request, list);
 	if (request.item && request.selectedItems.empty()) {
 		AddEphemeralMessageActions(
 			menu,

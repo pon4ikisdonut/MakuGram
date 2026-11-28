@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_stories.h"
 
+#include "makugram/makugram_settings.h"
 #include "data/data_story_edit_sources.h"
 #include "data/data_story_drafts.h"
 #include "base/const_string.h"
@@ -1468,6 +1469,12 @@ void Stories::checkQuitPreventFinished() {
 }
 
 void Stories::sendMarkAsReadRequests() {
+	// блокируем отправку отметки о прочтении историй
+	if (MakuGram::Settings::instance().ghostHideStoriesView()) {
+		_markReadTimer.cancel();
+		_markReadPending.clear();
+		return;
+	}
 	_markReadTimer.cancel();
 	for (auto i = begin(_markReadPending); i != end(_markReadPending);) {
 		const auto peerId = *i;
@@ -1484,6 +1491,12 @@ void Stories::sendMarkAsReadRequests() {
 }
 
 void Stories::sendIncrementViewsRequests() {
+	// не инкрементируем счетчик просмотров историй для сохранения анонимности
+	if (MakuGram::Settings::instance().ghostHideStoriesView()) {
+		_incrementViewsTimer.cancel();
+		_incrementViewsPending.clear();
+		return;
+	}
 	if (_incrementViewsPending.empty()) {
 		return;
 	}

@@ -19,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/text_options.h"
 #include "ui/painter.h"
 #include "styles/style_dialogs.h"
+#include "makugram/makugram_filter.h"
 
 namespace HistoryView {
 namespace {
@@ -58,7 +59,8 @@ bool SendActionPainter::updateNeedsAnimating(
 		not_null<UserData*> user,
 		const MTPSendMessageAction &action) {
 	using Type = Api::SendProgressType;
-	if (action.type() == mtpc_sendMessageCancelAction) {
+	if (MakuGram::IsUserFullHidden(user)
+		|| action.type() == mtpc_sendMessageCancelAction) {
 		clear(user);
 		return false;
 	}

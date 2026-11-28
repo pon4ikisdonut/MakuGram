@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_histories.h"
 
+#include "makugram/makugram_settings.h"
 #include "api/api_text_entities.h"
 #include "data/business/data_shortcut_messages.h"
 #include "data/components/ephemeral_messages.h"
@@ -719,6 +720,11 @@ void Histories::reportPendingDeliveries() {
 }
 
 void Histories::sendReadRequests() {
+	// блокируем отправку запросов на прочтение, чтобы сообщения оставались непрочитанными на сервере
+	if (MakuGram::Settings::instance().ghostMarkRead()) {
+		_readRequestsTimer.cancel();
+		return;
+	}
 	DEBUG_LOG(("Reading: send requests with count %1.").arg(_states.size()));
 	if (_states.empty()) {
 		return;
@@ -746,6 +752,10 @@ void Histories::sendReadRequests() {
 }
 
 void Histories::sendReadRequest(not_null<History*> history, State &state) {
+	// отменяем отправку отметки о прочтении диалога
+	if (MakuGram::Settings::instance().ghostMarkRead()) {
+		return;
+	}
 	Expects(state.willReadTill > state.sentReadTill);
 
 	const auto tillId = state.sentReadTill = base::take(state.willReadTill);
@@ -1213,14 +1223,31 @@ int Histories::sendPreparedMessage(
 				api->applyUpdates(result, randomId);
 				done(result, response);
 				finish();
+				// принудительно возвращаем статус офлайн после отправки, чтобы сбить серверный триггер активности
+				if (MakuGram::Settings::instance().ghostHideOnline()) {
+					api->request(MTPaccount_UpdateStatus(
+						MTP_bool(true)
+					)).send();
+				}
 			}).fail([=](
 					const MTP::Error &error,
 					const MTP::Response &response) {
 				fail(error, response);
 				finish();
+				if (MakuGram::Settings::instance().ghostHideOnline()) {
+					api->request(MTPaccount_UpdateStatus(
+						MTP_bool(true)
+					)).send();
+				}
 			}).afterRequest(
 				history->sendRequestId
 			).send();
+			// сбиваем статус активности в момент отправки сообщения
+			if (MakuGram::Settings::instance().ghostHideOnline()) {
+				api->request(MTPaccount_UpdateStatus(
+					MTP_bool(true)
+				)).send();
+			}
 			return history->sendRequestId;
 		});
 	});

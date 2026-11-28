@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "api/api_updates.h"
 
+#include "makugram/makugram_settings.h"
 #include "api/api_authorizations.h"
 #include "api/api_user_names.h"
 #include "api/api_chat_participants.h"
@@ -259,6 +260,11 @@ Updates::Updates(not_null<Main::Session*> session)
 	)).done([=](const MTPupdates_State &result) {
 		stateDone(result);
 	}).send();
+
+	MakuGram::Settings::instance().ghostHideOnlineChanges(
+	) | rpl::on_next([=](bool) {
+		updateOnline(crl::now());
+	}, _lifetime);
 
 	using namespace rpl::mappers;
 	session->changes().peerUpdates(
@@ -1002,6 +1008,10 @@ void Updates::updateOnline(crl::time lastNonIdleTime, bool gotOtherOffline) {
 
 	const auto &config = _session->serverConfig();
 	bool isOnline = Core::App().hasActiveWindow(&session());
+	// принудительно держим офлайн, чтобы клиент не передавал статус «в сети» при активности окна
+	if (MakuGram::Settings::instance().ghostHideOnline()) {
+		isOnline = false;
+	}
 	int updateIn = config.onlineUpdatePeriod;
 	Assert(updateIn >= 0);
 	if (isOnline) {

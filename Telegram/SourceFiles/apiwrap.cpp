@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "apiwrap.h"
 
+#include "makugram/makugram_settings.h"
 #include "api/api_authorizations.h"
 #include "api/api_attached_stickers.h"
 #include "api/api_blocked_peers.h"
@@ -1477,6 +1478,10 @@ void ApiWrap::migrateFail(not_null<PeerData*> peer, const QString &error) {
 
 void ApiWrap::markContentsRead(
 		const base::flat_set<not_null<HistoryItem*>> &items) {
+	// не отправляем отметку о прослушивании голосовых сообщений и просмотре медиа
+	if (MakuGram::Settings::instance().ghostMarkRead()) {
+		return;
+	}
 	auto markedIds = QVector<MTPint>();
 	auto channelMarkedIds = base::flat_map<
 		not_null<ChannelData*>,
@@ -1508,6 +1513,10 @@ void ApiWrap::markContentsRead(
 }
 
 void ApiWrap::markContentsRead(not_null<HistoryItem*> item) {
+	// блокируем отправку факта открытия кружка или голосового сообщения
+	if (MakuGram::Settings::instance().ghostMarkRead()) {
+		return;
+	}
 	if (!item->markContentsRead(true) || !item->isRegular()) {
 		return;
 	}

@@ -6,12 +6,19 @@ a custom Telegram Desktop client fork.
 #include "makugram/currency_converter.h"
 #include "makugram/makugram_updater.h"
 #include "makugram/makugram_lang.h"
+#include "makugram/tg_ws_proxy.h"
 #include "boxes/connection_box.h"
 
 #include "makugram/makugram_settings.h"
+#include "apiwrap.h"
 #include "base/event_filter.h"
 #include "core/click_handler_types.h"
+#include "data/data_changes.h"
+#include "data/data_peer.h"
+#include "data/data_session.h"
+#include "data/data_user.h"
 #include "lang/lang_keys.h"
+#include "main/main_session.h"
 #include "settings/sections/settings_main.h"
 #include "settings/settings_builder.h"
 #include "settings/settings_common_session.h"
@@ -21,13 +28,21 @@ a custom Telegram Desktop client fork.
 #include "styles/style_layers.h"
 #include "ui/basic_click_handlers.h"
 #include "ui/boxes/confirm_box.h"
+#include "ui/empty_userpic.h"
 #include "ui/layers/generic_box.h"
+#include "ui/painter.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/fields/input_field.h"
 #include "ui/widgets/labels.h"
 #include "ui/wrap/vertical_layout.h"
 #include "window/window_session_controller.h"
+#include <QtCore/QDateTime>
+#include <QtCore/QHash>
+#include <QtCore/QPointer>
+#include <QtCore/QRegularExpression>
+#include <QtCore/QSet>
+#include <QtGui/QPainterPath>
 
 namespace Settings {
 namespace {
@@ -50,6 +65,17 @@ constexpr auto kBoxMaxHeight = 690;
 		st.height = 46;
 		st.textTop = 13;
 		st.style = st::semiboldTextStyle;
+		return st;
+	}();
+	return result;
+}
+
+[[nodiscard]] const style::RoundButton &AddPlusButtonStyle() {
+	static auto result = [] {
+		auto st = st::defaultActiveButton;
+		st.height = 36;
+		st.width = 36;
+		st.padding = QMargins();
 		return st;
 	}();
 	return result;
@@ -242,6 +268,410 @@ void ShowSpamFilterBox(not_null<Window::SessionController*> controller) {
 	}));
 }
 
+[[nodiscard]] QString NormalizeUserInputIdentifier(const QString &raw) {
+	auto clean = raw.trimmed();
+	if (clean.startsWith(u"https://t.me/"_q, Qt::CaseInsensitive)) {
+		clean = clean.mid(13);
+	} else if (clean.startsWith(u"http://t.me/"_q, Qt::CaseInsensitive)) {
+		clean = clean.mid(12);
+	} else if (clean.startsWith(u"t.me/"_q, Qt::CaseInsensitive)) {
+		clean = clean.mid(5);
+	}
+	if (clean.startsWith('@')) {
+		clean = clean.mid(1);
+	}
+	const auto slash = clean.indexOf('/');
+	if (slash > 0) {
+		clean = clean.left(slash);
+	}
+	clean = clean.trimmed();
+	if (clean.isEmpty()) {
+		return QString();
+	}
+	bool ok = false;
+	if (const auto id = clean.toULongLong(&ok); ok && id > 0) {
+		return QString::number(id);
+	}
+	static const auto kUsernameRx = QRegularExpression(u"^[a-zA-Z0-9_]{3,64}$"_q);
+	if (kUsernameRx.match(clean).hasMatch()) {
+		return '@' + clean.toLower();
+	}
+	return QString();
+}
+
+[[nodiscard]] PeerData *ResolveLocalPeer(
+		not_null<Main::Session*> session,
+		const QString &identifier) {
+	auto clean = identifier.trimmed().toLower();
+	if (clean.startsWith('@')) {
+		clean.remove(0, 1);
+	}
+	bool ok = false;
+	if (const auto rawId = clean.toULongLong(&ok); ok && rawId > 0) {
+		if (const auto user = session->data().userLoaded(UserId(rawId))) {
+			return user;
+		}
+		return session->data().peerLoaded(PeerId(rawId));
+	}
+	return session->data().peerByUsername(clean);
+}
+
+void ShowFullHiddenUsersBox(not_null<Window::SessionController*> controller) {
+	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+		box->setWidth(kBoxContentWidth);
+		box->setMaxHeight(kBoxMaxHeight);
+		box->setTitle(Tr::Value(
+			QString::fromUtf8("Полностью скрытые пользователи"),
+			u"Full-Hidden Users"_q));
+
+		box->addRow(
+			object_ptr<Ui::FlatLabel>(
+				box,
+				Tr::Value(
+					QString::fromUtf8(
+						"Эти пользователи полностью исчезнут из списка чатов, поиска и списка участников, а их сообщения, статусы набора текста и уведомления вообще не будут отображаться (без блокировки в Telegram)."),
+					u"These users will completely disappear from the chat list, search, and member lists, and their messages, typing indicators, and notifications will not be displayed at all (without blocking them in Telegram)."_q),
+				st::boxDividerLabel),
+			style::margins(
+				st::boxRowPadding.left(),
+				4,
+				st::boxRowPadding.right(),
+				st::boxMediumSkip),
+			style::al_justify);
+
+		const auto inputRow = box->addRow(
+			object_ptr<Ui::RpWidget>(box),
+			style::margins(
+				st::boxRowPadding.left(),
+				0,
+				st::boxRowPadding.right(),
+				st::boxMediumSkip));
+		const auto field = Ui::CreateChild<Ui::InputField>(
+			inputRow,
+			st::defaultInputField,
+			Tr::Value(
+				QString::fromUtf8("Введите @username или user_id..."),
+				u"Enter @username or user_id..."_q));
+		field->setFocus();
+
+		const auto addBtn = Ui::CreateChild<Ui::RoundButton>(
+			inputRow,
+			rpl::single(QString()),
+			AddPlusButtonStyle());
+		addBtn->setFullRadius(true);
+
+		constexpr auto kAddBtnSize = 36;
+		const auto plusIcon = Ui::CreateChild<Ui::RpWidget>(addBtn);
+		plusIcon->setAttribute(Qt::WA_TransparentForMouseEvents);
+		plusIcon->resize(kAddBtnSize, kAddBtnSize);
+		plusIcon->paintRequest() | rpl::on_next([=] {
+			auto p = QPainter(plusIcon);
+			auto hq = PainterHighQualityEnabler(p);
+			p.setPen(QPen(st::activeButtonFg->c, 2.0, Qt::SolidLine, Qt::RoundCap));
+			const auto cx = plusIcon->width() / 2.0;
+			const auto cy = plusIcon->height() / 2.0;
+			constexpr auto kArm = 6.0;
+			p.drawLine(QPointF(cx - kArm, cy), QPointF(cx + kArm, cy));
+			p.drawLine(QPointF(cx, cy - kArm), QPointF(cx, cy + kArm));
+		}, plusIcon->lifetime());
+		plusIcon->show();
+
+		const auto layoutInputRow = [=] {
+			const auto w = inputRow->width();
+			if (w <= 0) {
+				return;
+			}
+			const auto fieldWidth = std::max(80, w - kAddBtnSize - 10);
+			field->resizeToWidth(fieldWidth);
+			const auto rowHeight = std::max(field->height(), kAddBtnSize);
+			inputRow->resize(w, rowHeight);
+			field->moveToLeft(0, std::max(0, (rowHeight - field->height()) / 2));
+			addBtn->resize(kAddBtnSize, kAddBtnSize);
+			addBtn->moveToRight(0, std::max(0, (rowHeight - kAddBtnSize) / 2));
+			plusIcon->resize(kAddBtnSize, kAddBtnSize);
+		};
+		inputRow->widthValue() | rpl::on_next([=](int) {
+			layoutInputRow();
+		}, inputRow->lifetime());
+		field->heightValue() | rpl::on_next([=](int) {
+			layoutInputRow();
+		}, inputRow->lifetime());
+		layoutInputRow();
+
+		const auto cardsContainer = box->addRow(
+			object_ptr<Ui::VerticalLayout>(box),
+			QMargins());
+
+		const auto weakBox = QPointer<Ui::GenericBox>(box);
+		const auto weakCards = QPointer<Ui::VerticalLayout>(cardsContainer);
+		const auto resolveAttempted = std::make_shared<QSet<QString>>();
+		const auto rebuildPtr = std::make_shared<Fn<void()>>();
+
+		const auto session = &controller->session();
+		const auto requestResolveUsername = [=](const QString &usernameNoAt) {
+			const auto lower = usernameNoAt.toLower();
+			if (lower.isEmpty() || resolveAttempted->contains(lower)) {
+				return;
+			}
+			resolveAttempted->insert(lower);
+			session->api().request(MTPcontacts_ResolveUsername(
+				MTP_flags(0),
+				MTP_string(lower),
+				MTP_string(QString())
+			)).done([=](const MTPcontacts_ResolvedPeer &result) {
+				result.match([&](const MTPDcontacts_resolvedPeer &data) {
+					session->data().processUsers(data.vusers());
+					session->data().processChats(data.vchats());
+				});
+				if (weakBox && rebuildPtr && *rebuildPtr) {
+					(*rebuildPtr)();
+				}
+			}).send();
+		};
+
+		*rebuildPtr = [=] {
+			const auto container = weakCards.data();
+			if (!container) {
+				return;
+			}
+			container->clear();
+			const auto entries = MakuGram::Settings::instance().fullHiddenUsersEntries();
+			if (entries.empty()) {
+				container->add(
+					object_ptr<Ui::FlatLabel>(
+						container,
+						Tr::Value(
+							QString::fromUtf8("Список пуст. Добавьте пользователя по @username или user_id выше."),
+							u"The list is empty. Add a user by @username or user_id above."_q),
+						st::boxDividerLabel),
+					style::margins(
+						st::boxRowPadding.left(),
+						8,
+						st::boxRowPadding.right(),
+						12));
+				if (container->width() > 0) {
+					container->resizeToWidth(container->width());
+				}
+				return;
+			}
+
+			struct CardState {
+				Ui::PeerUserpicView userpic;
+			};
+
+			for (const auto &entry : entries) {
+				const auto idText = entry.identifier;
+				auto cleanKey = idText.trimmed().toLower();
+				if (cleanKey.startsWith('@')) {
+					cleanKey.remove(0, 1);
+				}
+				bool ok = false;
+				const auto numericId = cleanKey.toULongLong(&ok);
+				const auto isNumeric = (ok && numericId > 0);
+				if (!isNumeric && !ResolveLocalPeer(session, idText)) {
+					requestResolveUsername(cleanKey);
+				}
+
+				const auto card = container->add(
+					object_ptr<Ui::RpWidget>(container),
+					style::margins(
+						st::boxRowPadding.left(),
+						0,
+						st::boxRowPadding.right(),
+						8));
+				const auto state = card->lifetime().make_state<CardState>();
+				constexpr auto kCardHeight = 66;
+				card->resize(card->width(), kCardHeight);
+
+				const auto removeBtn = Ui::CreateChild<Ui::IconButton>(
+					card,
+					st::boxTitleClose);
+				removeBtn->setCursor(style::cur_pointer);
+				removeBtn->show();
+				removeBtn->setClickedCallback([=] {
+					MakuGram::Settings::instance().removeFullHiddenUser(idText);
+				});
+
+				card->sizeValue() | rpl::on_next([=](QSize s) {
+					removeBtn->moveToRight(
+						6,
+						std::max(0, (s.height() - removeBtn->height()) / 2));
+				}, card->lifetime());
+
+				card->paintRequest() | rpl::on_next([=] {
+					auto p = QPainter(card);
+					auto hq = PainterHighQualityEnabler(p);
+
+					QPainterPath path;
+					path.addRoundedRect(
+						QRectF(0, 0, card->width(), card->height()),
+						st::roundRadiusLarge,
+						st::roundRadiusLarge);
+					p.fillPath(path, st::boxDividerBg);
+
+					constexpr auto kAvatarSize = 42;
+					constexpr auto kAvatarLeft = 12;
+					const auto avatarTop = (card->height() - kAvatarSize) / 2;
+					const auto peer = ResolveLocalPeer(session, idText);
+
+					if (peer) {
+						peer->paintUserpic(p, state->userpic, {
+							.position = QPoint(kAvatarLeft, avatarTop),
+							.size = kAvatarSize,
+							.shape = Ui::PeerUserpicShape::Circle,
+						});
+					} else {
+						const auto fallbackLetter = cleanKey.isEmpty()
+							? u"?"_q
+							: cleanKey.left(1).toUpper();
+						Ui::EmptyUserpic(
+							Ui::EmptyUserpic::UserpicColor(qHash(cleanKey) % 8),
+							fallbackLetter).paintCircle(
+								p,
+								kAvatarLeft,
+								avatarTop,
+								kAvatarSize,
+								kAvatarSize);
+					}
+
+					const auto textLeft = kAvatarLeft + kAvatarSize + 12;
+					const auto textRight = card->width() - removeBtn->width() - 14;
+					const auto textWidth = std::max(40, textRight - textLeft);
+
+					QString titleLine;
+					QString subLine;
+					if (peer) {
+						titleLine = peer->name().trimmed();
+						if (titleLine.isEmpty()) {
+							titleLine = idText;
+						}
+						const auto uname = peer->username().trimmed();
+						const auto rawPeerId = peer->id.value & PeerId::kChatTypeMask;
+						if (!uname.isEmpty()) {
+							subLine = u"@%1 · ID: %2"_q.arg(uname).arg(rawPeerId);
+						} else {
+							subLine = u"ID: %1"_q.arg(rawPeerId);
+						}
+					} else {
+						titleLine = isNumeric
+							? Tr::Get(QString::fromUtf8("Пользователь %1").arg(cleanKey), u"User %1"_q.arg(cleanKey))
+							: idText;
+						subLine = isNumeric
+							? u"ID: %1"_q.arg(cleanKey)
+							: idText;
+					}
+
+					const auto dateValue = (entry.addedAt > 0)
+						? QDateTime::fromSecsSinceEpoch(entry.addedAt).toString(u"dd.MM.yyyy"_q)
+						: Tr::Get(QString::fromUtf8("ранее"), u"earlier"_q);
+					const auto dateLine = Tr::Get(
+						QString::fromUtf8("Добавлено: %1").arg(dateValue),
+						u"Added: %1"_q.arg(dateValue));
+
+					const auto &titleFont = st::semiboldTextStyle.font;
+					const auto &subFont = st::defaultTextStyle.font;
+					const auto &dateFont = st::boxDividerLabel.style.font;
+
+					p.setPen(st::windowBoldFg);
+					p.setFont(titleFont);
+					p.drawText(
+						textLeft,
+						10 + titleFont->ascent,
+						titleFont->elided(titleLine, textWidth));
+
+					p.setPen(st::windowSubTextFg);
+					p.setFont(subFont);
+					p.drawText(
+						textLeft,
+						29 + subFont->ascent,
+						subFont->elided(subLine, textWidth));
+
+					p.setFont(dateFont);
+					p.drawText(
+						textLeft,
+						47 + dateFont->ascent,
+						dateFont->elided(dateLine, textWidth));
+				}, card->lifetime());
+			}
+
+			if (container->width() > 0) {
+				container->resizeToWidth(container->width());
+			}
+		};
+
+		const auto tryAdd = [=] {
+			const auto normalized = NormalizeUserInputIdentifier(field->getLastText());
+			if (normalized.isEmpty()) {
+				field->showError();
+				return;
+			}
+			auto cleanTarget = normalized.toLower();
+			if (cleanTarget.startsWith('@')) {
+				cleanTarget.remove(0, 1);
+			}
+			for (const auto &existing : MakuGram::Settings::instance().fullHiddenUsersEntries()) {
+				auto cleanExisting = existing.identifier.toLower();
+				if (cleanExisting.startsWith('@')) {
+					cleanExisting.remove(0, 1);
+				}
+				if (cleanExisting == cleanTarget) {
+					controller->showToast(Tr::Get(
+						QString::fromUtf8("Пользователь уже есть в списке"),
+						u"User is already in the list"_q));
+					field->setText(QString());
+					return;
+				}
+			}
+			MakuGram::Settings::instance().addFullHiddenUser(normalized);
+			field->setText(QString());
+			field->setFocus();
+			if (!normalized.startsWith('@')) {
+				return;
+			}
+			if (!ResolveLocalPeer(session, normalized)) {
+				requestResolveUsername(normalized.mid(1));
+			}
+		};
+
+		addBtn->setClickedCallback(tryAdd);
+		field->submits() | rpl::on_next(tryAdd, field->lifetime());
+
+		MakuGram::Settings::instance().fullHiddenUsersChanges() | rpl::on_next([=] {
+			if (*rebuildPtr) {
+				(*rebuildPtr)();
+			}
+		}, box->lifetime());
+
+		const auto updateCards = [=] {
+			if (const auto container = weakCards.data()) {
+				for (const auto child : container->children()) {
+					if (const auto w = qobject_cast<QWidget*>(child)) {
+						w->update();
+					}
+				}
+			}
+		};
+
+		session->downloaderTaskFinished() | rpl::on_next([=] {
+			updateCards();
+		}, box->lifetime());
+
+		session->changes().peerUpdates(
+			Data::PeerUpdate::Flag::Name
+				| Data::PeerUpdate::Flag::Photo
+				| Data::PeerUpdate::Flag::Username
+		) | rpl::on_next([=] {
+			updateCards();
+		}, box->lifetime());
+
+		(*rebuildPtr)();
+
+		box->addButton(tr::lng_close(), [=] {
+			box->closeBox();
+		});
+	}));
+}
+
 void ShowMessagesBox(not_null<Window::SessionController*> controller) {
 	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setWidth(kBoxContentWidth);
@@ -379,6 +809,58 @@ void ShowPrivacyBox(not_null<Window::SessionController*> controller) {
 		AddCheckboxRow(
 			box,
 			Tr::Value(
+				QString::fromUtf8("Режим призрака"),
+				u"Ghost Mode"_q),
+			MakuGram::Settings::instance().ghostMode(),
+			[=](bool checked) {
+				MakuGram::Settings::instance().setGhostMode(checked);
+			},
+			Tr::Value(
+				QString::fromUtf8("Полная невидимость: скрывает онлайн, статус набора текста и выбора стикеров, запрещает отмечать входящие сообщения и истории прочитанными."),
+				u"Complete invisibility: hides online status, typing and sticker choosing, prevents marking messages and stories as read."_q));
+
+		AddCheckboxRow(
+			box,
+			Tr::Value(
+				QString::fromUtf8("Не передавать статус «В сети»"),
+				u"Do not send online status"_q),
+			MakuGram::Settings::instance().ghostHideOnline(),
+			[=](bool checked) {
+				MakuGram::Settings::instance().setGhostHideOnline(checked);
+			},
+			Tr::Value(
+				QString::fromUtf8("Скрывает ваше присутствие в сети (для всех отображается статус «был(а) недавно»)."),
+				u"Hides your online presence (always shows 'last seen recently')."_q));
+
+		AddCheckboxRow(
+			box,
+			Tr::Value(
+				QString::fromUtf8("Не отмечать сообщения прочитанными"),
+				u"Do not mark messages as read"_q),
+			MakuGram::Settings::instance().ghostMarkRead(),
+			[=](bool checked) {
+				MakuGram::Settings::instance().setGhostMarkRead(checked);
+			},
+			Tr::Value(
+				QString::fromUtf8("Входящие сообщения остаются непрочитанными на сервере, собеседник не видит галочки о прочтении."),
+				u"Incoming messages remain unread on the server, the sender will not see read checkmarks."_q));
+
+		AddCheckboxRow(
+			box,
+			Tr::Value(
+				QString::fromUtf8("Анонимный просмотр историй"),
+				u"Anonymous story viewing"_q),
+			MakuGram::Settings::instance().ghostHideStoriesView(),
+			[=](bool checked) {
+				MakuGram::Settings::instance().setGhostHideStoriesView(checked);
+			},
+			Tr::Value(
+				QString::fromUtf8("Просматривайте истории без отметки и без попадания в список просмотревших."),
+				u"View stories without marking them as viewed and without appearing in viewers list."_q));
+
+		AddCheckboxRow(
+			box,
+			Tr::Value(
 				QString::fromUtf8("Не передавать статус набора текста"),
 				u"Do not send typing status"_q),
 			MakuGram::Settings::instance().hideTypingStatus(),
@@ -431,6 +913,36 @@ void ShowPrivacyBox(not_null<Window::SessionController*> controller) {
 		AddCheckboxRow(
 			box,
 			Tr::Value(
+				QString::fromUtf8("Полное скрытие пользователей (исчезновение)"),
+				u"Full hide users (vanish)"_q),
+			MakuGram::Settings::instance().fullHiddenUsersEnabled(),
+			[=](bool checked) {
+				MakuGram::Settings::instance().setFullHiddenUsersEnabled(checked);
+			},
+			Tr::Value(
+				QString::fromUtf8("Полностью убирает выбранных пользователей из списка чатов, поиска и участников, а их сообщения и уведомления вообще не отображает (без блокировки в Telegram)."),
+				u"Completely removes selected users from the chat list, search, and member lists, and hides all their messages and notifications (without blocking them in Telegram)."_q),
+			0);
+
+		const auto fullHiddenUsersBtn = box->addRow(
+			object_ptr<Ui::RoundButton>(
+				box,
+				Tr::Value(
+					QString::fromUtf8("Настроить полностью скрытых пользователей..."),
+					u"Configure full-hidden users..."_q),
+				st::defaultBoxButton),
+			style::margins(
+				st::boxRowPadding.left(),
+				9,
+				st::boxRowPadding.right(),
+				st::boxMediumSkip));
+		fullHiddenUsersBtn->setClickedCallback([=] {
+			ShowFullHiddenUsersBox(controller);
+		});
+
+		AddCheckboxRow(
+			box,
+			Tr::Value(
 				QString::fromUtf8("Спрятать номер телефона из профиля и настроек"),
 				u"Hide phone number in profile and settings"_q),
 			MakuGram::Settings::instance().hidePhoneNumberInSettings(),
@@ -442,6 +954,151 @@ void ShowPrivacyBox(not_null<Window::SessionController*> controller) {
 				u"Hides your phone number in profile, settings header, and edit menu to protect against accidental exposure."_q));
 
 		box->addButton(tr::lng_close(), [=] {
+			box->closeBox();
+		});
+	}));
+}
+
+void ShowNewbiePeriodBox(
+		not_null<Window::SessionController*> controller,
+		Fn<void()> onSaved = nullptr) {
+	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+		box->setWidth(kBoxContentWidth);
+		box->setMaxHeight(kBoxMaxHeight);
+		box->setTitle(Tr::Value(
+			QString::fromUtf8("Период статуса «Новичок»"),
+			u"Newbie status period"_q));
+
+		box->addRow(
+			object_ptr<Ui::FlatLabel>(
+				box,
+				Tr::Value(
+					QString::fromUtf8(
+						"Выберите срок пребывания в чате, в течение которого участник считается новичком, или укажите своё количество дней:"),
+					u"Choose how long a member is considered a newbie after joining a chat, or enter a custom number of days:"_q),
+				st::boxLabel),
+			st::boxRowPadding);
+
+		struct Preset {
+			int days;
+			QString ru;
+			QString en;
+		};
+		const std::vector<Preset> presets = {
+			{ 1, QString::fromUtf8("1 день"), u"1 day"_q },
+			{ 7, QString::fromUtf8("7 дней (1 неделя)"), u"7 days (1 week)"_q },
+			{ 14, QString::fromUtf8("14 дней (2 недели)"), u"14 days (2 weeks)"_q },
+			{ 30, QString::fromUtf8("30 дней (1 месяц)"), u"30 days (1 month)"_q },
+			{ 90, QString::fromUtf8("90 дней (3 месяца)"), u"90 days (3 months)"_q },
+			{ 180, QString::fromUtf8("180 дней (полгода)"), u"180 days (6 months)"_q },
+			{ 365, QString::fromUtf8("365 дней (1 год)"), u"365 days (1 year)"_q },
+			{ 0, QString::fromUtf8("Свой срок (в днях)"), u"Custom period (days)"_q },
+		};
+
+		const auto currentDays = MakuGram::Settings::instance().newbiePeriodDays();
+		auto initialGroup = 0;
+		for (const auto &p : presets) {
+			if (p.days > 0 && p.days == currentDays) {
+				initialGroup = p.days;
+				break;
+			}
+		}
+
+		const auto group = std::make_shared<Ui::RadiobuttonGroup>(initialGroup);
+		const auto syncing = std::make_shared<bool>(false);
+
+		box->addSkip(st::boxMediumSkip);
+		for (const auto &p : presets) {
+			const auto radio = box->addRow(
+				object_ptr<Ui::Radiobutton>(
+					box,
+					group,
+					p.days,
+					Tr::Get(p.ru, p.en),
+					st::defaultBoxCheckbox),
+				style::margins(
+					st::boxRowPadding.left(),
+					4,
+					st::boxRowPadding.right(),
+					4));
+			radio->setCursor(style::cur_pointer);
+		}
+
+		const auto customField = box->addRow(
+			object_ptr<Ui::InputField>(
+				box,
+				st::defaultInputField,
+				Tr::Value(
+					QString::fromUtf8("Количество дней (1–36500)"),
+					u"Number of days (1–36500)"_q),
+				QString::number(currentDays)),
+			style::margins(
+				st::boxRowPadding.left(),
+				st::boxMediumSkip,
+				st::boxRowPadding.right(),
+				st::boxMediumSkip));
+
+		group->setChangedCallback([=](int value) {
+			if (*syncing) {
+				return;
+			}
+			*syncing = true;
+			if (value > 0) {
+				customField->setText(QString::number(value));
+			} else {
+				customField->setFocus();
+			}
+			*syncing = false;
+		});
+
+		customField->changes(
+		) | rpl::on_next([=] {
+			if (*syncing) {
+				return;
+			}
+			*syncing = true;
+			bool ok = false;
+			const auto typed = customField->getLastText().trimmed().toInt(&ok);
+			auto matched = 0;
+			if (ok && typed > 0) {
+				for (const auto &p : presets) {
+					if (p.days > 0 && p.days == typed) {
+						matched = p.days;
+						break;
+					}
+				}
+			}
+			group->setValue(matched);
+			*syncing = false;
+		}, customField->lifetime());
+
+		const auto saveAndClose = [=] {
+			auto days = group->current();
+			if (days <= 0) {
+				bool ok = false;
+				days = customField->getLastText().trimmed().toInt(&ok);
+				if (!ok || days < 1) {
+					customField->showError();
+					return;
+				}
+			}
+			MakuGram::Settings::instance().setNewbiePeriodDays(days);
+			if (onSaved) {
+				onSaved();
+			}
+			box->closeBox();
+			controller->showToast(Tr::Get(
+				QString::fromUtf8("Настройки сохранены"),
+				u"Settings saved"_q));
+		};
+
+		customField->submits(
+		) | rpl::on_next([=] {
+			saveAndClose();
+		}, customField->lifetime());
+
+		box->addButton(tr::lng_settings_save(), saveAndClose);
+		box->addButton(tr::lng_cancel(), [=] {
 			box->closeBox();
 		});
 	}));
@@ -504,8 +1161,34 @@ void ShowModerationBox(not_null<Window::SessionController*> controller) {
 				MakuGram::Settings::instance().setShowNewbieBadge(checked);
 			},
 			Tr::Value(
-				QString::fromUtf8("Отображать бейдж \"Новичок\" рядом с именем участников, состоящих в чате меньше 3 месяцев."),
-				u"Show \"Newbie\" badge next to members who joined the chat less than 3 months ago."_q));
+				QString::fromUtf8("Отображать бейдж \"Новичок\" рядом с именем участников, состоящих в чате меньше заданного периода (по умолчанию 90 дн.)."),
+				u"Show \"Newbie\" badge next to members who joined the chat less than the configured period ago (default: 90 days)."_q),
+			0);
+
+		const auto newbieBtnText = [] {
+			const auto days = MakuGram::Settings::instance().newbiePeriodDays();
+			return Tr::Value(
+				QString::fromUtf8("Настроить период новичка (%1 дн.)...").arg(days),
+				QString::fromUtf8("Configure newbie period (%1 d)...").arg(days));
+		};
+		const auto newbiePeriodBtn = box->addRow(
+			object_ptr<Ui::RoundButton>(
+				box,
+				newbieBtnText(),
+				st::defaultBoxButton),
+			style::margins(
+				st::boxRowPadding.left(),
+				9,
+				st::boxRowPadding.right(),
+				st::boxMediumSkip));
+		const auto weakNewbieBtn = QPointer<Ui::RoundButton>(newbiePeriodBtn);
+		newbiePeriodBtn->setClickedCallback([=] {
+			ShowNewbiePeriodBox(controller, [=] {
+				if (const auto btn = weakNewbieBtn.data()) {
+					btn->setText(newbieBtnText());
+				}
+			});
+		});
 
 		box->addButton(tr::lng_close(), [=] {
 			box->closeBox();
@@ -524,15 +1207,15 @@ void ShowProfileBox(not_null<Window::SessionController*> controller) {
 		AddCheckboxRow(
 			box,
 			Tr::Value(
-				QString::fromUtf8("Показывать ID аккаунта"),
-				u"Show account ID"_q),
+				QString::fromUtf8("Показывать ID и дату регистрации аккаунта"),
+				u"Show account ID and registration date"_q),
 			MakuGram::Settings::instance().showProfileDetails(),
 			[=](bool checked) {
 				MakuGram::Settings::instance().setShowProfileDetails(checked);
 			},
 			Tr::Value(
-				QString::fromUtf8("Отображать числовой ID (с копированием в буфер по клику) в профиле пользователя."),
-				u"Display numeric ID (clickable to copy) in user profile."_q));
+				QString::fromUtf8("Отображать числовой ID (с копированием в буфер по клику) и примерную дату регистрации в профиле пользователя."),
+				u"Display numeric ID (clickable to copy) and estimated registration date in user profile."_q));
 
 		AddCheckboxRow(
 			box,
@@ -712,6 +1395,89 @@ void ShowStreamerModeBox(not_null<Window::SessionController*> controller) {
 	}));
 }
 
+void ShowProxySettingsBox(not_null<Window::SessionController*> controller) {
+	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+		box->setWidth(kBoxContentWidth);
+		box->setMaxHeight(kBoxMaxHeight);
+		box->setTitle(Tr::Value(
+			QString::fromUtf8("Прокси и ускорение сети"),
+			u"Proxy & Network Acceleration"_q));
+
+		AddCheckboxRow(
+			box,
+			Tr::Value(
+				QString::fromUtf8("Встроенный TG WS Proxy (WebSocket)"),
+				u"Built-in TG WS Proxy (WebSocket)"_q),
+			MakuGram::Settings::instance().tgWsProxyEnabled(),
+			[=](bool checked) {
+				MakuGram::Settings::instance().setTgWsProxyEnabled(checked);
+				MakuGram::TgWsProxy::instance().applyToProxySettings(checked);
+			},
+			Tr::Value(
+				QString::fromUtf8("Туннелирование MTProto трафика через защищенные WebSocket WSS соединения (Cloudflare) для полного обхода замедлений, фильтрации DPI и блокировок Telegram без использования сторонних VPN."),
+				u"Tunnel MTProto traffic over secure WebSocket WSS connections (Cloudflare) to bypass throttling, DPI filtering, and Telegram blocks without external VPN."_q));
+
+		box->addSkip(st::boxMediumSkip);
+
+		const auto buttonWidth = kBoxContentWidth
+			- st::boxRowPadding.left()
+			- st::boxRowPadding.right();
+
+		const auto updateDomainsBtn = box->addRow(
+			object_ptr<Ui::RoundButton>(
+				box,
+				Tr::Value(
+					QString::fromUtf8("Обновить список прокси с GitHub"),
+					u"Update proxy list from GitHub"_q),
+				st::defaultBoxButton),
+			style::margins(
+				st::boxRowPadding.left(),
+				4,
+				st::boxRowPadding.right(),
+				4));
+		updateDomainsBtn->setFullWidth(buttonWidth);
+		updateDomainsBtn->setFullRadius(true);
+		updateDomainsBtn->setClickedCallback([=] {
+			controller->showToast(Tr::Get(
+				QString::fromUtf8("Обновление списка прокси с GitHub..."),
+				u"Updating proxy list from GitHub..."_q));
+			MakuGram::TgWsProxy::instance().updateDomainsFromGitHub([=](bool success, int count) {
+				if (success) {
+					controller->showToast(Tr::Get(
+						QString::fromUtf8("Список прокси обновлен! Активно доменов: %1").arg(count),
+						QString::fromUtf8("Proxy list updated! Active domains: %1").arg(count)));
+				} else {
+					controller->showToast(Tr::Get(
+						QString::fromUtf8("Не удалось обновить список с GitHub (используются кэшированные домены: %1)").arg(count),
+						QString::fromUtf8("Failed to update from GitHub (using cached domains: %1)").arg(count)));
+				}
+			});
+		});
+
+		const auto nativeProxyBtn = box->addRow(
+			object_ptr<Ui::RoundButton>(
+				box,
+				Tr::Value(
+					QString::fromUtf8("Стандартные настройки прокси Telegram..."),
+					u"Standard Telegram Proxy Settings..."_q),
+				st::defaultBoxButton),
+			style::margins(
+				st::boxRowPadding.left(),
+				4,
+				st::boxRowPadding.right(),
+				4));
+		nativeProxyBtn->setFullWidth(buttonWidth);
+		nativeProxyBtn->setFullRadius(true);
+		nativeProxyBtn->setClickedCallback([=] {
+			ProxiesBoxController::Show(controller);
+		});
+
+		box->addButton(tr::lng_close(), [=] {
+			box->closeBox();
+		});
+	}));
+}
+
 void ShowAboutBox(not_null<Window::SessionController*> controller) {
 	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setWidth(kBoxContentWidth);
@@ -873,14 +1639,14 @@ void BuildMakuGramSection(SectionBuilder &builder) {
 		.title = Tr::Value(QString::fromUtf8("Приватность и безопасность"), u"Privacy & Security"_q),
 		.icon = { &st::menuIconLock },
 		.onClick = [=] { ShowPrivacyBox(controller); },
-		.keywords = { u"privacy"_q, u"typing"_q, u"copy"_q, u"delete"_q, u"phone"_q, u"blocked"_q, u"приватность"_q, u"тайпинг"_q, u"копирование"_q, u"удаление"_q, u"телефон"_q, u"номер"_q, u"блок"_q },
+		.keywords = { u"privacy"_q, u"ghost"_q, u"offline"_q, u"typing"_q, u"copy"_q, u"delete"_q, u"phone"_q, u"blocked"_q, u"hidden"_q, u"приватность"_q, u"призрак"_q, u"невидимка"_q, u"офлайн"_q, u"тайпинг"_q, u"копирование"_q, u"удаление"_q, u"телефон"_q, u"номер"_q, u"блок"_q, u"скрытые"_q },
 	});
 
 	builder.addButton({
 		.title = Tr::Value(QString::fromUtf8("Модерация чатов"), u"Chat Moderation"_q),
 		.icon = { &st::menuIconAdmin },
 		.onClick = [=] { ShowModerationBox(controller); },
-		.keywords = { u"moderation"_q, u"ban"_q, u"badge"_q, u"requests"_q, u"search"_q, u"бан"_q, u"новичок"_q, u"заявки"_q, u"модерация"_q, u"поиск"_q },
+		.keywords = { u"moderation"_q, u"ban"_q, u"badge"_q, u"requests"_q, u"search"_q, u"newbie"_q, u"period"_q, u"days"_q, u"бан"_q, u"новичок"_q, u"период"_q, u"срок"_q, u"дни"_q, u"заявки"_q, u"модерация"_q, u"поиск"_q },
 	});
 
 	builder.addButton({
@@ -902,6 +1668,13 @@ void BuildMakuGramSection(SectionBuilder &builder) {
 		.icon = { &st::menuIconPhoto },
 		.onClick = [=] { ShowMediaBox(controller); },
 		.keywords = { u"media"_q, u"zoom"_q, u"volume"_q, u"медиа"_q, u"масштаб"_q, u"экран"_q },
+	});
+
+	builder.addButton({
+		.title = Tr::Value(QString::fromUtf8("Настройки прокси и сети"), u"Proxy & Network Settings"_q),
+		.icon = { &st::menuIconNetwork },
+		.onClick = [=] { ShowProxySettingsBox(controller); },
+		.keywords = { u"proxy"_q, u"прокси"_q, u"vpn"_q, u"впн"_q, u"network"_q, u"сеть"_q, u"ws"_q, u"websocket"_q },
 	});
 
 	builder.addButton({

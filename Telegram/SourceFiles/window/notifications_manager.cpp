@@ -45,6 +45,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session_settings.h"
 #include "ui/text/text_utilities.h"
 #include "platform/platform_specific.h"
+#include "makugram/makugram_filter.h"
+#include "makugram/makugram_settings.h"
 
 #include <QtGui/QWindow>
 #include <QtGui/QGuiApplication>
@@ -358,6 +360,10 @@ System::SkipState System::computeSkipState(
 	const auto notifyBy = messageType
 		? item->specialNotificationPeer()
 		: notification.reactionOrVoteSender;
+	if (MakuGram::IsUserFullHidden(notifyBy)
+		|| (messageType && MakuGram::IsFullHiddenMessageHidden(item))) {
+		return { SkipState::Skip };
+	}
 	if (Core::Quitting()) {
 		return { SkipState::Skip };
 	} else if (!Core::App().settings().notifyFromAll()
@@ -831,9 +837,11 @@ void System::showNext() {
 		while (!i->second.empty() && i->second.begin()->first <= ms) {
 			const auto thread = i->first;
 			const auto from = i->second.begin()->second.notifyBy;
-			if (const auto soundId = MaybeSoundFor(thread, from)) {
-				alertThread = thread;
-				alertSoundId = soundId;
+			if (!MakuGram::IsUserFullHidden(from)) {
+				if (const auto soundId = MaybeSoundFor(thread, from)) {
+					alertThread = thread;
+					alertSoundId = soundId;
+				}
 			}
 			while (!i->second.empty()
 				&& i->second.begin()->first <= ms + kMinimalAlertDelay) {
@@ -943,6 +951,11 @@ void System::showNext() {
 			break;
 		}
 		const auto notifyItem = notify->item;
+		if (MakuGram::IsFullHiddenMessageHidden(notifyItem)
+			|| MakuGram::IsUserFullHidden(notify->reactionOrVoteSender)) {
+			notifyThread->clearNotifications();
+			continue;
+		}
 		const auto notifySilent = computeSkipState(*notify).silent;
 		const auto messageType = (notify->type
 			== Data::ItemNotificationType::Message);

@@ -4,14 +4,19 @@ a custom Telegram Desktop client fork.
 */
 #include "makugram/makugram_settings.h"
 #include "makugram/makugram_updater.h"
+#include "makugram/tg_ws_proxy.h"
+#include "data/data_peer.h"
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "rpl/then.h"
 #include "config.h"
 #include <QtGui/QImage>
 
+#include <QtCore/QDateTime>
 #include <QtCore/QSettings>
 #include <QtCore/QStringList>
+#include <QtCore/QTimer>
+#include <QtCore/QVariantMap>
 
 namespace MakuGram {
 
@@ -44,6 +49,78 @@ bool IsRussianConsonant(QChar c) {
 	default:
 		return false;
 	}
+}
+
+QString NormalizeHiddenIdentifierKey(const QString &value) {
+	auto clean = value.trimmed().toLower();
+	if (clean.startsWith(u"https://t.me/"_q)) {
+		clean = clean.mid(13);
+	} else if (clean.startsWith(u"http://t.me/"_q)) {
+		clean = clean.mid(12);
+	} else if (clean.startsWith(u"t.me/"_q)) {
+		clean = clean.mid(5);
+	}
+	if (clean.startsWith('@')) {
+		clean.remove(0, 1);
+	}
+	const auto slash = clean.indexOf('/');
+	if (slash > 0) {
+		clean = clean.left(slash);
+	}
+	return clean;
+}
+
+void LoadHiddenDates(const QString &key, QMap<QString, qint64> &out) {
+	out.clear();
+	QSettings s("MakuGram", "MakuGram");
+	const auto map = s.value(key).toMap();
+	for (auto it = map.begin(); it != map.end(); ++it) {
+		const auto clean = NormalizeHiddenIdentifierKey(it.key());
+		const auto ts = it.value().toLongLong();
+		if (!clean.isEmpty() && ts > 0) {
+			out[clean] = ts;
+		}
+	}
+}
+
+void SaveHiddenDates(const QString &key, const QMap<QString, qint64> &dates) {
+	QVariantMap map;
+	for (auto it = dates.begin(); it != dates.end(); ++it) {
+		if (it.value() > 0) {
+			map.insert(it.key(), it.value());
+		}
+	}
+	QSettings s("MakuGram", "MakuGram");
+	s.setValue(key, map);
+}
+
+void ParseHiddenList(const QString &raw, QStringList &out) {
+	out.clear();
+	const auto list = raw.split(
+		QRegularExpression(u"[\\s,;\\n]+"_q),
+		Qt::SkipEmptyParts);
+	for (const auto &item : list) {
+		const auto clean = NormalizeHiddenIdentifierKey(item);
+		if (!clean.isEmpty() && !out.contains(clean)) {
+			out.append(clean);
+		}
+	}
+}
+
+std::vector<HiddenUserEntry> BuildHiddenEntries(
+		const QStringList &list,
+		const QMap<QString, qint64> &dates) {
+	std::vector<HiddenUserEntry> result;
+	result.reserve(list.size());
+	for (const auto &clean : list) {
+		bool ok = false;
+		const auto isNumeric = (clean.toULongLong(&ok) > 0 && ok);
+		result.push_back({
+			.identifier = isNumeric ? clean : ('@' + clean),
+			.addedAt = dates.value(clean, 0),
+		});
+	}
+	return result;
 }
 
 } // namespace
@@ -133,7 +210,12 @@ Settings::Settings() {
 	_filterSpamInSearch = s.value("filterSpamInSearch", false).toBool();
 	_spamKeywords = s.value("spamKeywords", QString()).toString();
 	_showNewbieBadge = s.value("showNewbieBadge", false).toBool();
+	_newbiePeriodDays = qBound(1, s.value("newbiePeriodDays", 90).toInt(), 36500);
 	_showProfileDetails = s.value("showProfileDetails", true).toBool();
+	_ghostMode = s.value("ghostMode", false).toBool();
+	_ghostHideOnline = s.value("ghostHideOnline", false).toBool();
+	_ghostMarkRead = s.value("ghostMarkRead", false).toBool();
+	_ghostHideStoriesView = s.value("ghostHideStoriesView", false).toBool();
 	_hideTypingStatus = s.value("hideTypingStatus", false).toBool();
 	_bypassRestrictedContent = s.value("bypassRestrictedContent", false).toBool();
 	_showUnreadFilterButton = s.value("showUnreadFilterButton", true).toBool();
@@ -154,8 +236,20 @@ Settings::Settings() {
 	_streamerMode = s.value("streamerMode", false).toBool();
 	_currencyConverter = s.value("currencyConverter", false).toBool();
 	_currencyConverterTargets = s.value("currencyConverterTargets", QString("USD,RUB,KZT")).toString();
+	_tgWsProxyEnabled = s.value("tgWsProxyEnabled", false).toBool();
+	_tgWsProxyPort = s.value("tgWsProxyPort", 1443).toInt();
+	_tgWsProxyWorker = s.value("tgWsProxyWorker", QString()).toString();
+	_fullHiddenUsersEnabled = s.value("fullHiddenUsersEnabled", true).toBool();
+	_fullHiddenUsersRaw = s.value("fullHiddenUsersRaw", QString()).toString();
+	LoadHiddenDates(u"fullHiddenUsersDates"_q, _fullHiddenUsersAddedAt);
 
 	parseSpamKeywords();
+	parseFullHiddenUsers();
+	if (_tgWsProxyEnabled) {
+		QTimer::singleShot(0, &TgWsProxy::instance(), [] {
+			TgWsProxy::instance().start();
+		});
+	}
 }
 
 void Settings::parseSpamKeywords() {
@@ -378,6 +472,24 @@ rpl::producer<bool> Settings::showNewbieBadgeChanges() const {
 	return _showNewbieBadgeChanges.events();
 }
 
+int Settings::newbiePeriodDays() const {
+	return _newbiePeriodDays;
+}
+
+void Settings::setNewbiePeriodDays(int days) {
+	days = qBound(1, days, 36500);
+	if (_newbiePeriodDays != days) {
+		_newbiePeriodDays = days;
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("newbiePeriodDays", days);
+		_newbiePeriodDaysChanges.fire_copy(days);
+	}
+}
+
+rpl::producer<int> Settings::newbiePeriodDaysChanges() const {
+	return _newbiePeriodDaysChanges.events();
+}
+
 bool Settings::showProfileDetails() const {
 	return _showProfileDetails;
 }
@@ -395,8 +507,80 @@ rpl::producer<bool> Settings::showProfileDetailsChanges() const {
 	return _showProfileDetailsChanges.events();
 }
 
+bool Settings::ghostMode() const {
+	return _ghostMode;
+}
+
+void Settings::setGhostMode(bool enabled) {
+	if (_ghostMode != enabled) {
+		_ghostMode = enabled;
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("ghostMode", enabled);
+		_ghostModeChanges.fire_copy(enabled);
+		_ghostHideOnlineChanges.fire_copy(ghostHideOnline());
+		_ghostMarkReadChanges.fire_copy(ghostMarkRead());
+		_ghostHideStoriesViewChanges.fire_copy(ghostHideStoriesView());
+		_hideTypingStatusChanges.fire_copy(hideTypingStatus());
+	}
+}
+
+rpl::producer<bool> Settings::ghostModeChanges() const {
+	return _ghostModeChanges.events();
+}
+
+bool Settings::ghostHideOnline() const {
+	return _ghostMode || _ghostHideOnline;
+}
+
+void Settings::setGhostHideOnline(bool enabled) {
+	if (_ghostHideOnline != enabled) {
+		_ghostHideOnline = enabled;
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("ghostHideOnline", enabled);
+		_ghostHideOnlineChanges.fire_copy(ghostHideOnline());
+	}
+}
+
+rpl::producer<bool> Settings::ghostHideOnlineChanges() const {
+	return _ghostHideOnlineChanges.events();
+}
+
+bool Settings::ghostMarkRead() const {
+	return _ghostMode || _ghostMarkRead;
+}
+
+void Settings::setGhostMarkRead(bool enabled) {
+	if (_ghostMarkRead != enabled) {
+		_ghostMarkRead = enabled;
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("ghostMarkRead", enabled);
+		_ghostMarkReadChanges.fire_copy(ghostMarkRead());
+	}
+}
+
+rpl::producer<bool> Settings::ghostMarkReadChanges() const {
+	return _ghostMarkReadChanges.events();
+}
+
+bool Settings::ghostHideStoriesView() const {
+	return _ghostMode || _ghostHideStoriesView;
+}
+
+void Settings::setGhostHideStoriesView(bool enabled) {
+	if (_ghostHideStoriesView != enabled) {
+		_ghostHideStoriesView = enabled;
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("ghostHideStoriesView", enabled);
+		_ghostHideStoriesViewChanges.fire_copy(ghostHideStoriesView());
+	}
+}
+
+rpl::producer<bool> Settings::ghostHideStoriesViewChanges() const {
+	return _ghostHideStoriesViewChanges.events();
+}
+
 bool Settings::hideTypingStatus() const {
-	return _hideTypingStatus;
+	return _ghostMode || _hideTypingStatus;
 }
 
 void Settings::setHideTypingStatus(bool enabled) {
@@ -747,6 +931,211 @@ void Settings::setCurrencyConverterTargets(const QString &targets) {
 
 rpl::producer<QString> Settings::currencyConverterTargetsChanges() const {
 	return _currencyConverterTargetsChanges.events();
+}
+
+bool Settings::tgWsProxyEnabled() const {
+	return _tgWsProxyEnabled;
+}
+
+void Settings::setTgWsProxyEnabled(bool enabled) {
+	if (_tgWsProxyEnabled != enabled) {
+		_tgWsProxyEnabled = enabled;
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("tgWsProxyEnabled", enabled);
+		_tgWsProxyEnabledChanges.fire_copy(enabled);
+	}
+}
+
+rpl::producer<bool> Settings::tgWsProxyEnabledChanges() const {
+	return _tgWsProxyEnabledChanges.events();
+}
+
+int Settings::tgWsProxyPort() const {
+	return _tgWsProxyPort;
+}
+
+void Settings::setTgWsProxyPort(int port) {
+	if (_tgWsProxyPort != port) {
+		_tgWsProxyPort = port;
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("tgWsProxyPort", port);
+		_tgWsProxyPortChanges.fire_copy(port);
+	}
+}
+
+rpl::producer<int> Settings::tgWsProxyPortChanges() const {
+	return _tgWsProxyPortChanges.events();
+}
+
+QString Settings::tgWsProxyWorker() const {
+	return _tgWsProxyWorker;
+}
+
+void Settings::setTgWsProxyWorker(const QString &worker) {
+	if (_tgWsProxyWorker != worker) {
+		_tgWsProxyWorker = worker;
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("tgWsProxyWorker", worker);
+		_tgWsProxyWorkerChanges.fire_copy(worker);
+	}
+}
+
+rpl::producer<QString> Settings::tgWsProxyWorkerChanges() const {
+	return _tgWsProxyWorkerChanges.events();
+}
+
+void Settings::parseFullHiddenUsers() {
+	ParseHiddenList(_fullHiddenUsersRaw, _fullHiddenUsers);
+}
+
+bool Settings::fullHiddenUsersEnabled() const {
+	return _fullHiddenUsersEnabled;
+}
+
+void Settings::setFullHiddenUsersEnabled(bool enabled) {
+	if (_fullHiddenUsersEnabled != enabled) {
+		_fullHiddenUsersEnabled = enabled;
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("fullHiddenUsersEnabled", enabled);
+		_fullHiddenUsersEnabledChanges.fire_copy(enabled);
+		_fullHiddenUsersChanges.fire(true);
+	}
+}
+
+rpl::producer<bool> Settings::fullHiddenUsersEnabledChanges() const {
+	return _fullHiddenUsersEnabledChanges.events();
+}
+
+QString Settings::fullHiddenUsersRaw() const {
+	return _fullHiddenUsersRaw;
+}
+
+void Settings::setFullHiddenUsersRaw(const QString &raw) {
+	if (_fullHiddenUsersRaw != raw) {
+		_fullHiddenUsersRaw = raw;
+		parseFullHiddenUsers();
+		QSettings s("MakuGram", "MakuGram");
+		s.setValue("fullHiddenUsersRaw", raw);
+		_fullHiddenUsersChanges.fire(true);
+	}
+}
+
+QStringList Settings::fullHiddenUsersList() const {
+	return _fullHiddenUsers;
+}
+
+std::vector<HiddenUserEntry> Settings::fullHiddenUsersEntries() const {
+	return BuildHiddenEntries(_fullHiddenUsers, _fullHiddenUsersAddedAt);
+}
+
+void Settings::addFullHiddenUser(const QString &usernameOrId) {
+	const auto cleanKey = NormalizeHiddenIdentifierKey(usernameOrId);
+	if (cleanKey.isEmpty() || _fullHiddenUsers.contains(cleanKey)) {
+		return;
+	}
+	if (!_fullHiddenUsersAddedAt.contains(cleanKey)) {
+		_fullHiddenUsersAddedAt[cleanKey] = QDateTime::currentSecsSinceEpoch();
+		SaveHiddenDates(u"fullHiddenUsersDates"_q, _fullHiddenUsersAddedAt);
+	}
+	bool ok = false;
+	const auto formatted = (cleanKey.toULongLong(&ok) > 0 && ok)
+		? cleanKey
+		: ('@' + cleanKey);
+	auto raw = _fullHiddenUsersRaw.trimmed();
+	if (!raw.isEmpty()) {
+		raw += '\n';
+	}
+	raw += formatted;
+	setFullHiddenUsersRaw(raw);
+}
+
+void Settings::removeFullHiddenUser(const QString &usernameOrId) {
+	const auto clean = NormalizeHiddenIdentifierKey(usernameOrId);
+	if (clean.isEmpty()) {
+		return;
+	}
+	if (_fullHiddenUsersAddedAt.remove(clean) > 0) {
+		SaveHiddenDates(u"fullHiddenUsersDates"_q, _fullHiddenUsersAddedAt);
+	}
+	const auto list = _fullHiddenUsersRaw.split(
+		QRegularExpression(u"[\\s,;\\n]+"_q),
+		Qt::SkipEmptyParts);
+	QStringList remaining;
+	for (const auto &item : list) {
+		if (NormalizeHiddenIdentifierKey(item) != clean) {
+			remaining.append(item.trimmed());
+		}
+	}
+	setFullHiddenUsersRaw(remaining.join(u"\n"_q));
+}
+
+void Settings::toggleUserFullHidden(const PeerData *peer) {
+	if (!peer || peer->isSelf()) {
+		return;
+	}
+	const auto bareId = QString::number(peer->id.value);
+	const auto userRawId = QString::number(peer->id.value & PeerId::kChatTypeMask);
+	const auto uname = peer->username().trimmed().toLower();
+	if (isUserFullHidden(peer)) {
+		bool datesChanged = false;
+		datesChanged |= (_fullHiddenUsersAddedAt.remove(userRawId) > 0);
+		datesChanged |= (_fullHiddenUsersAddedAt.remove(bareId) > 0);
+		if (!uname.isEmpty()) {
+			datesChanged |= (_fullHiddenUsersAddedAt.remove(uname) > 0);
+		}
+		if (datesChanged) {
+			SaveHiddenDates(u"fullHiddenUsersDates"_q, _fullHiddenUsersAddedAt);
+		}
+		const auto list = _fullHiddenUsersRaw.split(
+			QRegularExpression(u"[\\s,;\\n]+"_q),
+			Qt::SkipEmptyParts);
+		QStringList remaining;
+		for (const auto &item : list) {
+			const auto clean = NormalizeHiddenIdentifierKey(item);
+			if (clean == userRawId || clean == bareId || (!uname.isEmpty() && clean == uname)) {
+				continue;
+			}
+			remaining.append(item.trimmed());
+		}
+		setFullHiddenUsersRaw(remaining.join(u"\n"_q));
+	} else {
+		const auto identifier = !uname.isEmpty()
+			? ('@' + uname)
+			: QString::number(peer->id.value & PeerId::kChatTypeMask);
+		addFullHiddenUser(identifier);
+	}
+}
+
+bool Settings::isUserFullHidden(const PeerData *peer) const {
+	if (!_fullHiddenUsersEnabled || !peer || peer->isSelf() || _fullHiddenUsers.isEmpty()) {
+		return false;
+	}
+	const auto bareId = QString::number(peer->id.value);
+	const auto userRawId = QString::number(peer->id.value & PeerId::kChatTypeMask);
+	const auto uname = peer->username().trimmed().toLower();
+
+	for (const auto &entry : _fullHiddenUsers) {
+		if (entry == userRawId || entry == bareId) {
+			return true;
+		}
+		if (!uname.isEmpty() && entry == uname) {
+			return true;
+		}
+		for (const auto &u : peer->usernames()) {
+			auto cleanU = u.trimmed().toLower();
+			if (cleanU.startsWith('@')) {
+				cleanU.remove(0, 1);
+			}
+			if (entry == cleanU) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+rpl::producer<bool> Settings::fullHiddenUsersChanges() const {
+	return _fullHiddenUsersChanges.events();
 }
 
 void BlurImageStrong(QImage &image) {

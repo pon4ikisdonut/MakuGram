@@ -7,10 +7,13 @@ a custom Telegram Desktop client fork.
 #include "rpl/event_stream.h"
 #include "rpl/producer.h"
 #include <QtCore/QString>
+#include <QtCore/QStringList>
+#include <QtCore/QMap>
 #include <QtCore/QRegularExpression>
 #include <vector>
 
 class QImage;
+class PeerData;
 
 namespace MakuGram {
 
@@ -31,6 +34,11 @@ struct SpamPattern {
 	std::vector<QString> variants;
 	PatternType type = PatternType::Exact;
 	QRegularExpression regex;
+};
+
+struct HiddenUserEntry {
+	QString identifier;
+	qint64 addedAt = 0;
 };
 
 [[nodiscard]] QString NormalizeRussianText(const QString &text);
@@ -79,9 +87,29 @@ public:
 	void setShowNewbieBadge(bool enabled);
 	[[nodiscard]] rpl::producer<bool> showNewbieBadgeChanges() const;
 
+	[[nodiscard]] int newbiePeriodDays() const;
+	void setNewbiePeriodDays(int days);
+	[[nodiscard]] rpl::producer<int> newbiePeriodDaysChanges() const;
+
 	[[nodiscard]] bool showProfileDetails() const;
 	void setShowProfileDetails(bool enabled);
 	[[nodiscard]] rpl::producer<bool> showProfileDetailsChanges() const;
+
+	[[nodiscard]] bool ghostMode() const;
+	void setGhostMode(bool enabled);
+	[[nodiscard]] rpl::producer<bool> ghostModeChanges() const;
+
+	[[nodiscard]] bool ghostHideOnline() const;
+	void setGhostHideOnline(bool enabled);
+	[[nodiscard]] rpl::producer<bool> ghostHideOnlineChanges() const;
+
+	[[nodiscard]] bool ghostMarkRead() const;
+	void setGhostMarkRead(bool enabled);
+	[[nodiscard]] rpl::producer<bool> ghostMarkReadChanges() const;
+
+	[[nodiscard]] bool ghostHideStoriesView() const;
+	void setGhostHideStoriesView(bool enabled);
+	[[nodiscard]] rpl::producer<bool> ghostHideStoriesViewChanges() const;
 
 	[[nodiscard]] bool hideTypingStatus() const;
 	void setHideTypingStatus(bool enabled);
@@ -165,6 +193,32 @@ public:
 	void setCurrencyConverterTargets(const QString &targets);
 	[[nodiscard]] rpl::producer<QString> currencyConverterTargetsChanges() const;
 
+	[[nodiscard]] bool tgWsProxyEnabled() const;
+	void setTgWsProxyEnabled(bool enabled);
+	[[nodiscard]] rpl::producer<bool> tgWsProxyEnabledChanges() const;
+
+	[[nodiscard]] int tgWsProxyPort() const;
+	void setTgWsProxyPort(int port);
+	[[nodiscard]] rpl::producer<int> tgWsProxyPortChanges() const;
+
+	[[nodiscard]] QString tgWsProxyWorker() const;
+	void setTgWsProxyWorker(const QString &worker);
+	[[nodiscard]] rpl::producer<QString> tgWsProxyWorkerChanges() const;
+
+	[[nodiscard]] bool fullHiddenUsersEnabled() const;
+	void setFullHiddenUsersEnabled(bool enabled);
+	[[nodiscard]] rpl::producer<bool> fullHiddenUsersEnabledChanges() const;
+
+	[[nodiscard]] QString fullHiddenUsersRaw() const;
+	void setFullHiddenUsersRaw(const QString &raw);
+	[[nodiscard]] QStringList fullHiddenUsersList() const;
+	[[nodiscard]] std::vector<HiddenUserEntry> fullHiddenUsersEntries() const;
+	void addFullHiddenUser(const QString &usernameOrId);
+	void removeFullHiddenUser(const QString &usernameOrId);
+	void toggleUserFullHidden(const PeerData *peer);
+	[[nodiscard]] bool isUserFullHidden(const PeerData *peer) const;
+	[[nodiscard]] rpl::producer<bool> fullHiddenUsersChanges() const;
+
 private:
 	Settings();
 	~Settings() = default;
@@ -173,6 +227,7 @@ private:
 	Settings &operator=(const Settings &) = delete;
 
 	void parseSpamKeywords();
+	void parseFullHiddenUsers();
 
 	bool _hideMessagesFromBlocked = false;
 	bool _quickBanInRequests = false;
@@ -185,7 +240,12 @@ private:
 	std::vector<QString> _spamKeywordsList;
 	std::vector<SpamPattern> _spamPatterns;
 	bool _showNewbieBadge = false;
+	int _newbiePeriodDays = 90;
 	bool _showProfileDetails = true;
+	bool _ghostMode = false;
+	bool _ghostHideOnline = false;
+	bool _ghostMarkRead = false;
+	bool _ghostHideStoriesView = false;
 	bool _hideTypingStatus = false;
 	bool _bypassRestrictedContent = false;
 	bool _showUnreadFilterButton = true;
@@ -206,6 +266,13 @@ private:
 	bool _streamerMode = false;
 	bool _currencyConverter = false;
 	QString _currencyConverterTargets = "USD,RUB,KZT";
+	bool _tgWsProxyEnabled = false;
+	int _tgWsProxyPort = 1443;
+	QString _tgWsProxyWorker;
+	bool _fullHiddenUsersEnabled = true;
+	QString _fullHiddenUsersRaw;
+	QStringList _fullHiddenUsers;
+	QMap<QString, qint64> _fullHiddenUsersAddedAt;
 
 	rpl::event_stream<bool> _hideMessagesFromBlockedChanges;
 	rpl::event_stream<bool> _quickBanInRequestsChanges;
@@ -216,7 +283,12 @@ private:
 	rpl::event_stream<bool> _filterSpamInSearchChanges;
 	rpl::event_stream<QString> _spamKeywordsChanges;
 	rpl::event_stream<bool> _showNewbieBadgeChanges;
+	rpl::event_stream<int> _newbiePeriodDaysChanges;
 	rpl::event_stream<bool> _showProfileDetailsChanges;
+	rpl::event_stream<bool> _ghostModeChanges;
+	rpl::event_stream<bool> _ghostHideOnlineChanges;
+	rpl::event_stream<bool> _ghostMarkReadChanges;
+	rpl::event_stream<bool> _ghostHideStoriesViewChanges;
 	rpl::event_stream<bool> _hideTypingStatusChanges;
 	rpl::event_stream<bool> _bypassRestrictedContentChanges;
 	rpl::event_stream<bool> _showUnreadFilterButtonChanges;
@@ -237,6 +309,11 @@ private:
 	rpl::event_stream<bool> _streamerModeChanges;
 	rpl::event_stream<bool> _currencyConverterChanges;
 	rpl::event_stream<QString> _currencyConverterTargetsChanges;
+	rpl::event_stream<bool> _tgWsProxyEnabledChanges;
+	rpl::event_stream<int> _tgWsProxyPortChanges;
+	rpl::event_stream<QString> _tgWsProxyWorkerChanges;
+	rpl::event_stream<bool> _fullHiddenUsersEnabledChanges;
+	rpl::event_stream<bool> _fullHiddenUsersChanges;
 };
 
 } // namespace MakuGram

@@ -2032,6 +2032,8 @@ PRIVATE
     makugram/makugram_lang.h
     makugram/settings_makugram.cpp
     makugram/settings_makugram.h
+    makugram/tg_ws_proxy.cpp
+    makugram/tg_ws_proxy.h
     settings/sections/settings_main.cpp
     settings/sections/settings_main.h
     settings/settings_recent_searches.cpp
