@@ -527,7 +527,7 @@ QString CurrencyRatesManager::formatConverted(
 	} else if (code == u"KZT"_q) {
 		return prefix + num + u" ₸"_q;
 	} else if (code == u"BYN"_q) {
-		return prefix + num + u" бел. руб"_q;
+		return prefix + num + Tr::Get(u" бел. руб"_q, u" BYN"_q);
 	} else if (code == u"TRY"_q) {
 		return prefix + num + u" ₺"_q;
 	} else if (code == u"GBP"_q) {

@@ -227,10 +227,7 @@ public:
 		}
 
 		const auto repo = QString::fromLatin1(kGitHubRepo);
-		const bool beta = MakuGram::Settings::instance().betaUpdates();
-		const auto url = beta
-			? QUrl(u"https://api.github.com/repos/%1/releases"_q.arg(repo))
-			: QUrl(u"https://api.github.com/repos/%1/releases/latest"_q.arg(repo));
+		const auto url = QUrl(u"https://api.github.com/repos/%1/releases/latest"_q.arg(repo));
 		auto request = QNetworkRequest(url);
 		request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
 		request.setRawHeader("User-Agent", "MakuGramR-App");
@@ -255,7 +252,7 @@ public:
 			const auto data = reply->readAll();
 			QJsonParseError parseError;
 			const auto doc = QJsonDocument::fromJson(data, &parseError);
-			if (parseError.error != QJsonParseError::NoError || (!doc.isObject() && !doc.isArray())) {
+			if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
 				if (!silent && controller) {
 					controller->showToast(Tr::Get(
 						u"Ошибка обработки ответа от GitHub."_q,
@@ -264,21 +261,7 @@ public:
 				return;
 			}
 
-			QJsonObject obj;
-			if (doc.isArray()) {
-				const auto arr = doc.array();
-				if (arr.isEmpty()) {
-					if (!silent && controller) {
-						controller->showToast(Tr::Get(
-							QString::fromUtf8("У вас установлена последняя версия MakuGramR (v%1, сборка #%2)").arg(kVersion).arg(kBuildNumber),
-							QString::fromUtf8("You have the latest version of MakuGramR (v%1, build #%2)").arg(kVersion).arg(kBuildNumber)));
-					}
-					return;
-				}
-				obj = arr.first().toObject();
-			} else {
-				obj = doc.object();
-			}
+			const auto obj = doc.object();
 
 			ReleaseInfo info;
 			info.tag = obj.value(u"tag_name"_q).toString();

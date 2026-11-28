@@ -421,10 +421,7 @@ void PeerData::setUserpicPhoto(const MTPPhoto &data) {
 	}
 }
 
-QImage *PeerData::userpicCloudImage(Ui::PeerUserpicView &view) const {
-	if (MakuGram::IsUserHidden(this)) {
-		return nullptr;
-	}
+QImage *PeerData::userpicCloudImageRaw(Ui::PeerUserpicView &view) const {
 	if (!_userpic.isCurrentView(view.cloud)) {
 		if (!_userpic.empty()) {
 			view.cloud = _userpic.createView();
@@ -446,22 +443,56 @@ QImage *PeerData::userpicCloudImage(Ui::PeerUserpicView &view) const {
 	return nullptr;
 }
 
+QImage *PeerData::userpicCloudImage(Ui::PeerUserpicView &view) const {
+	if (MakuGram::IsUserHidden(this)) {
+		return nullptr;
+	}
+	return userpicCloudImageRaw(view);
+}
+
 void PeerData::paintUserpic(
 		QPainter &p,
 		Ui::PeerUserpicView &view,
 		PaintUserpicContext context) const {
+	paintUserpicImpl(p, view, context, true);
+}
+
+void PeerData::paintRawUserpic(
+		QPainter &p,
+		Ui::PeerUserpicView &view,
+		PaintUserpicContext context) const {
+	paintUserpicImpl(p, view, context, false);
+}
+
+void PeerData::paintUserpicImpl(
+		QPainter &p,
+		Ui::PeerUserpicView &view,
+		PaintUserpicContext context,
+		bool allowHiddenMask) const {
 	if (const auto broadcast = monoforumBroadcast()) {
 		if (context.shape == Ui::PeerUserpicShape::Auto) {
 			context.shape = Ui::PeerUserpicShape::Monoforum;
 		}
-		broadcast->paintUserpic(p, view, context);
+		broadcast->paintUserpicImpl(p, view, context, allowHiddenMask);
 		return;
 	}
 	const auto size = context.size;
-	const auto cloud = MakuGram::IsUserHidden(this) ? nullptr : userpicCloudImage(view);
+	const auto hiddenMasked = allowHiddenMask && MakuGram::IsUserHidden(this);
+	const auto cloud = hiddenMasked ? nullptr : userpicCloudImageRaw(view);
 	const auto ratio = style::DevicePixelRatio();
 	if (context.shape == Ui::PeerUserpicShape::Auto) {
 		context.shape = userpicShape();
+	}
+	if (!cloud && !allowHiddenMask && MakuGram::IsUserHidden(this)) {
+		Ui::EmptyUserpic(
+			Ui::EmptyUserpic::UserpicColor(colorIndex()),
+			rawName()).paintCircle(
+				p,
+				context.position.x(),
+				context.position.y(),
+				size,
+				size);
+		return;
 	}
 	Ui::ValidateUserpicCache(
 		view,

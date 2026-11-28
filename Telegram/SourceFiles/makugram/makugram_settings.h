@@ -8,6 +8,7 @@ a custom Telegram Desktop client fork.
 #include "rpl/producer.h"
 #include <QtCore/QString>
 #include <QtCore/QStringList>
+#include <QtCore/QMap>
 #include <QtCore/QRegularExpression>
 #include <vector>
 
@@ -33,6 +34,11 @@ struct SpamPattern {
 	std::vector<QString> variants;
 	PatternType type = PatternType::Exact;
 	QRegularExpression regex;
+};
+
+struct HiddenUserEntry {
+	QString identifier;
+	qint64 addedAt = 0;
 };
 
 [[nodiscard]] QString NormalizeRussianText(const QString &text);
@@ -187,10 +193,6 @@ public:
 	void setCurrencyConverterTargets(const QString &targets);
 	[[nodiscard]] rpl::producer<QString> currencyConverterTargetsChanges() const;
 
-	[[nodiscard]] bool betaUpdates() const;
-	void setBetaUpdates(bool enabled);
-	[[nodiscard]] rpl::producer<bool> betaUpdatesChanges() const;
-
 	[[nodiscard]] bool tgWsProxyEnabled() const;
 	void setTgWsProxyEnabled(bool enabled);
 	[[nodiscard]] rpl::producer<bool> tgWsProxyEnabledChanges() const;
@@ -210,6 +212,7 @@ public:
 	[[nodiscard]] QString hiddenUsersRaw() const;
 	void setHiddenUsersRaw(const QString &raw);
 	[[nodiscard]] QStringList hiddenUsersList() const;
+	[[nodiscard]] std::vector<HiddenUserEntry> hiddenUsersEntries() const;
 	void addHiddenUser(const QString &usernameOrId);
 	void removeHiddenUser(const QString &usernameOrId);
 	void toggleUserHidden(const PeerData *peer);
@@ -225,6 +228,7 @@ public:
 	[[nodiscard]] QString fullHiddenUsersRaw() const;
 	void setFullHiddenUsersRaw(const QString &raw);
 	[[nodiscard]] QStringList fullHiddenUsersList() const;
+	[[nodiscard]] std::vector<HiddenUserEntry> fullHiddenUsersEntries() const;
 	void addFullHiddenUser(const QString &usernameOrId);
 	void removeFullHiddenUser(const QString &usernameOrId);
 	void toggleUserFullHidden(const PeerData *peer);
@@ -279,7 +283,6 @@ private:
 	bool _streamerMode = false;
 	bool _currencyConverter = false;
 	QString _currencyConverterTargets = "USD,RUB,KZT";
-	bool _betaUpdates = false;
 	bool _tgWsProxyEnabled = false;
 	int _tgWsProxyPort = 1443;
 	QString _tgWsProxyWorker;
@@ -287,9 +290,11 @@ private:
 	QString _hiddenUsersRaw;
 	QStringList _hiddenUsers;
 	QStringList _hiddenNames;
+	QMap<QString, qint64> _hiddenUsersAddedAt;
 	bool _fullHiddenUsersEnabled = true;
 	QString _fullHiddenUsersRaw;
 	QStringList _fullHiddenUsers;
+	QMap<QString, qint64> _fullHiddenUsersAddedAt;
 
 	rpl::event_stream<bool> _hideMessagesFromBlockedChanges;
 	rpl::event_stream<bool> _quickBanInRequestsChanges;
@@ -326,7 +331,6 @@ private:
 	rpl::event_stream<bool> _streamerModeChanges;
 	rpl::event_stream<bool> _currencyConverterChanges;
 	rpl::event_stream<QString> _currencyConverterTargetsChanges;
-	rpl::event_stream<bool> _betaUpdatesChanges;
 	rpl::event_stream<bool> _tgWsProxyEnabledChanges;
 	rpl::event_stream<int> _tgWsProxyPortChanges;
 	rpl::event_stream<QString> _tgWsProxyWorkerChanges;

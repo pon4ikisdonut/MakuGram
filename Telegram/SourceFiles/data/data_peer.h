@@ -407,6 +407,10 @@ public:
 		QPainter &p,
 		Ui::PeerUserpicView &view,
 		PaintUserpicContext context) const;
+	void paintRawUserpic(
+		QPainter &p,
+		Ui::PeerUserpicView &view,
+		PaintUserpicContext context) const;
 	void paintUserpic(
 			QPainter &p,
 			Ui::PeerUserpicView &view,
@@ -621,6 +625,12 @@ protected:
 
 private:
 	void fillNames();
+	void paintUserpicImpl(
+		QPainter &p,
+		Ui::PeerUserpicView &view,
+		PaintUserpicContext context,
+		bool allowHiddenMask) const;
+	[[nodiscard]] QImage *userpicCloudImageRaw(Ui::PeerUserpicView &view) const;
 	[[nodiscard]] not_null<Ui::EmptyUserpic*> ensureEmptyUserpic() const;
 	[[nodiscard]] virtual auto unavailableReasons() const
 		-> const std::vector<Data::UnavailableReason> &;

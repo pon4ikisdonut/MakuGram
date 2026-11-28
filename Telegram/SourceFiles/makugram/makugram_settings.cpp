@@ -16,8 +16,10 @@ a custom Telegram Desktop client fork.
 #include "config.h"
 #include <QtGui/QImage>
 
+#include <QtCore/QDateTime>
 #include <QtCore/QSettings>
 #include <QtCore/QStringList>
+#include <QtCore/QVariantMap>
 
 namespace MakuGram {
 
@@ -50,6 +52,78 @@ bool IsRussianConsonant(QChar c) {
 	default:
 		return false;
 	}
+}
+
+QString NormalizeHiddenIdentifierKey(const QString &value) {
+	auto clean = value.trimmed().toLower();
+	if (clean.startsWith(u"https://t.me/"_q)) {
+		clean = clean.mid(13);
+	} else if (clean.startsWith(u"http://t.me/"_q)) {
+		clean = clean.mid(12);
+	} else if (clean.startsWith(u"t.me/"_q)) {
+		clean = clean.mid(5);
+	}
+	if (clean.startsWith('@')) {
+		clean.remove(0, 1);
+	}
+	const auto slash = clean.indexOf('/');
+	if (slash > 0) {
+		clean = clean.left(slash);
+	}
+	return clean;
+}
+
+void LoadHiddenDates(const QString &key, QMap<QString, qint64> &out) {
+	out.clear();
+	QSettings s("MakuGram", "MakuGram");
+	const auto map = s.value(key).toMap();
+	for (auto it = map.begin(); it != map.end(); ++it) {
+		const auto clean = NormalizeHiddenIdentifierKey(it.key());
+		const auto ts = it.value().toLongLong();
+		if (!clean.isEmpty() && ts > 0) {
+			out[clean] = ts;
+		}
+	}
+}
+
+void SaveHiddenDates(const QString &key, const QMap<QString, qint64> &dates) {
+	QVariantMap map;
+	for (auto it = dates.begin(); it != dates.end(); ++it) {
+		if (it.value() > 0) {
+			map.insert(it.key(), it.value());
+		}
+	}
+	QSettings s("MakuGram", "MakuGram");
+	s.setValue(key, map);
+}
+
+void ParseHiddenList(const QString &raw, QStringList &out) {
+	out.clear();
+	const auto list = raw.split(
+		QRegularExpression(u"[\\s,;\\n]+"_q),
+		Qt::SkipEmptyParts);
+	for (const auto &item : list) {
+		const auto clean = NormalizeHiddenIdentifierKey(item);
+		if (!clean.isEmpty() && !out.contains(clean)) {
+			out.append(clean);
+		}
+	}
+}
+
+std::vector<HiddenUserEntry> BuildHiddenEntries(
+		const QStringList &list,
+		const QMap<QString, qint64> &dates) {
+	std::vector<HiddenUserEntry> result;
+	result.reserve(list.size());
+	for (const auto &clean : list) {
+		bool ok = false;
+		const auto isNumeric = (clean.toULongLong(&ok) > 0 && ok);
+		result.push_back({
+			.identifier = isNumeric ? clean : ('@' + clean),
+			.addedAt = dates.value(clean, 0),
+		});
+	}
+	return result;
 }
 
 } // namespace
@@ -165,14 +239,15 @@ Settings::Settings() {
 	_streamerMode = s.value("streamerMode", false).toBool();
 	_currencyConverter = s.value("currencyConverter", false).toBool();
 	_currencyConverterTargets = s.value("currencyConverterTargets", QString("USD,RUB,KZT")).toString();
-	_betaUpdates = s.value("betaUpdates", false).toBool();
 	_tgWsProxyEnabled = s.value("tgWsProxyEnabled", false).toBool();
 	_tgWsProxyPort = s.value("tgWsProxyPort", 1443).toInt();
 	_tgWsProxyWorker = s.value("tgWsProxyWorker", QString()).toString();
 	_hiddenUsersEnabled = s.value("hiddenUsersEnabled", true).toBool();
 	_hiddenUsersRaw = s.value("hiddenUsersRaw", QString()).toString();
+	LoadHiddenDates(u"hiddenUsersDates"_q, _hiddenUsersAddedAt);
 	_fullHiddenUsersEnabled = s.value("fullHiddenUsersEnabled", true).toBool();
 	_fullHiddenUsersRaw = s.value("fullHiddenUsersRaw", QString()).toString();
+	LoadHiddenDates(u"fullHiddenUsersDates"_q, _fullHiddenUsersAddedAt);
 
 	parseSpamKeywords();
 	parseHiddenUsers();
@@ -864,23 +939,6 @@ rpl::producer<QString> Settings::currencyConverterTargetsChanges() const {
 	return _currencyConverterTargetsChanges.events();
 }
 
-bool Settings::betaUpdates() const {
-	return _betaUpdates;
-}
-
-void Settings::setBetaUpdates(bool enabled) {
-	if (_betaUpdates != enabled) {
-		_betaUpdates = enabled;
-		QSettings s("MakuGram", "MakuGram");
-		s.setValue("betaUpdates", enabled);
-		_betaUpdatesChanges.fire_copy(enabled);
-	}
-}
-
-rpl::producer<bool> Settings::betaUpdatesChanges() const {
-	return _betaUpdatesChanges.events();
-}
-
 bool Settings::tgWsProxyEnabled() const {
 	return _tgWsProxyEnabled;
 }
@@ -933,19 +991,7 @@ rpl::producer<QString> Settings::tgWsProxyWorkerChanges() const {
 }
 
 void Settings::parseHiddenUsers() {
-	_hiddenUsers.clear();
-	const auto list = _hiddenUsersRaw.split(
-		QRegularExpression(u"[\\s,;\\n]+"_q),
-		Qt::SkipEmptyParts);
-	for (const auto &item : list) {
-		auto clean = item.trimmed().toLower();
-		if (clean.startsWith('@')) {
-			clean.remove(0, 1);
-		}
-		if (!clean.isEmpty() && !_hiddenUsers.contains(clean)) {
-			_hiddenUsers.append(clean);
-		}
-	}
+	ParseHiddenList(_hiddenUsersRaw, _hiddenUsers);
 }
 
 bool Settings::hiddenUsersEnabled() const {
@@ -984,37 +1030,45 @@ QStringList Settings::hiddenUsersList() const {
 	return _hiddenUsers;
 }
 
+std::vector<HiddenUserEntry> Settings::hiddenUsersEntries() const {
+	return BuildHiddenEntries(_hiddenUsers, _hiddenUsersAddedAt);
+}
+
 void Settings::addHiddenUser(const QString &usernameOrId) {
-	auto clean = usernameOrId.trimmed();
-	if (clean.isEmpty()) {
+	const auto cleanKey = NormalizeHiddenIdentifierKey(usernameOrId);
+	if (cleanKey.isEmpty() || _hiddenUsers.contains(cleanKey)) {
 		return;
 	}
+	if (!_hiddenUsersAddedAt.contains(cleanKey)) {
+		_hiddenUsersAddedAt[cleanKey] = QDateTime::currentSecsSinceEpoch();
+		SaveHiddenDates(u"hiddenUsersDates"_q, _hiddenUsersAddedAt);
+	}
+	bool ok = false;
+	const auto formatted = (cleanKey.toULongLong(&ok) > 0 && ok)
+		? cleanKey
+		: ('@' + cleanKey);
 	auto raw = _hiddenUsersRaw.trimmed();
 	if (!raw.isEmpty()) {
 		raw += '\n';
 	}
-	raw += clean;
+	raw += formatted;
 	setHiddenUsersRaw(raw);
 }
 
 void Settings::removeHiddenUser(const QString &usernameOrId) {
-	auto clean = usernameOrId.trimmed().toLower();
-	if (clean.startsWith('@')) {
-		clean.remove(0, 1);
-	}
+	const auto clean = NormalizeHiddenIdentifierKey(usernameOrId);
 	if (clean.isEmpty()) {
 		return;
+	}
+	if (_hiddenUsersAddedAt.remove(clean) > 0) {
+		SaveHiddenDates(u"hiddenUsersDates"_q, _hiddenUsersAddedAt);
 	}
 	const auto list = _hiddenUsersRaw.split(
 		QRegularExpression(u"[\\s,;\\n]+"_q),
 		Qt::SkipEmptyParts);
 	QStringList remaining;
 	for (const auto &item : list) {
-		auto itemClean = item.trimmed().toLower();
-		if (itemClean.startsWith('@')) {
-			itemClean.remove(0, 1);
-		}
-		if (itemClean != clean) {
+		if (NormalizeHiddenIdentifierKey(item) != clean) {
 			remaining.append(item.trimmed());
 		}
 	}
@@ -1030,15 +1084,21 @@ void Settings::toggleUserHidden(const PeerData *peer) {
 	const auto uname = peer->rawUsername().trimmed().toLower();
 	const auto rawName = peer->rawName().trimmed();
 	if (isUserHidden(peer)) {
+		bool datesChanged = false;
+		datesChanged |= (_hiddenUsersAddedAt.remove(userRawId) > 0);
+		datesChanged |= (_hiddenUsersAddedAt.remove(bareId) > 0);
+		if (!uname.isEmpty()) {
+			datesChanged |= (_hiddenUsersAddedAt.remove(uname) > 0);
+		}
+		if (datesChanged) {
+			SaveHiddenDates(u"hiddenUsersDates"_q, _hiddenUsersAddedAt);
+		}
 		const auto list = _hiddenUsersRaw.split(
 			QRegularExpression(u"[\\s,;\\n]+"_q),
 			Qt::SkipEmptyParts);
 		QStringList remaining;
 		for (const auto &item : list) {
-			auto clean = item.trimmed().toLower();
-			if (clean.startsWith('@')) {
-				clean.remove(0, 1);
-			}
+			const auto clean = NormalizeHiddenIdentifierKey(item);
 			if (clean == userRawId || clean == bareId || (!uname.isEmpty() && clean == uname)) {
 				continue;
 			}
@@ -1139,19 +1199,7 @@ rpl::producer<bool> Settings::hiddenUsersChanges() const {
 }
 
 void Settings::parseFullHiddenUsers() {
-	_fullHiddenUsers.clear();
-	const auto list = _fullHiddenUsersRaw.split(
-		QRegularExpression(u"[\\s,;\\n]+"_q),
-		Qt::SkipEmptyParts);
-	for (const auto &item : list) {
-		auto clean = item.trimmed().toLower();
-		if (clean.startsWith('@')) {
-			clean.remove(0, 1);
-		}
-		if (!clean.isEmpty() && !_fullHiddenUsers.contains(clean)) {
-			_fullHiddenUsers.append(clean);
-		}
-	}
+	ParseHiddenList(_fullHiddenUsersRaw, _fullHiddenUsers);
 }
 
 bool Settings::fullHiddenUsersEnabled() const {
@@ -1190,37 +1238,45 @@ QStringList Settings::fullHiddenUsersList() const {
 	return _fullHiddenUsers;
 }
 
+std::vector<HiddenUserEntry> Settings::fullHiddenUsersEntries() const {
+	return BuildHiddenEntries(_fullHiddenUsers, _fullHiddenUsersAddedAt);
+}
+
 void Settings::addFullHiddenUser(const QString &usernameOrId) {
-	auto clean = usernameOrId.trimmed();
-	if (clean.isEmpty()) {
+	const auto cleanKey = NormalizeHiddenIdentifierKey(usernameOrId);
+	if (cleanKey.isEmpty() || _fullHiddenUsers.contains(cleanKey)) {
 		return;
 	}
+	if (!_fullHiddenUsersAddedAt.contains(cleanKey)) {
+		_fullHiddenUsersAddedAt[cleanKey] = QDateTime::currentSecsSinceEpoch();
+		SaveHiddenDates(u"fullHiddenUsersDates"_q, _fullHiddenUsersAddedAt);
+	}
+	bool ok = false;
+	const auto formatted = (cleanKey.toULongLong(&ok) > 0 && ok)
+		? cleanKey
+		: ('@' + cleanKey);
 	auto raw = _fullHiddenUsersRaw.trimmed();
 	if (!raw.isEmpty()) {
 		raw += '\n';
 	}
-	raw += clean;
+	raw += formatted;
 	setFullHiddenUsersRaw(raw);
 }
 
 void Settings::removeFullHiddenUser(const QString &usernameOrId) {
-	auto clean = usernameOrId.trimmed().toLower();
-	if (clean.startsWith('@')) {
-		clean.remove(0, 1);
-	}
+	const auto clean = NormalizeHiddenIdentifierKey(usernameOrId);
 	if (clean.isEmpty()) {
 		return;
+	}
+	if (_fullHiddenUsersAddedAt.remove(clean) > 0) {
+		SaveHiddenDates(u"fullHiddenUsersDates"_q, _fullHiddenUsersAddedAt);
 	}
 	const auto list = _fullHiddenUsersRaw.split(
 		QRegularExpression(u"[\\s,;\\n]+"_q),
 		Qt::SkipEmptyParts);
 	QStringList remaining;
 	for (const auto &item : list) {
-		auto itemClean = item.trimmed().toLower();
-		if (itemClean.startsWith('@')) {
-			itemClean.remove(0, 1);
-		}
-		if (itemClean != clean) {
+		if (NormalizeHiddenIdentifierKey(item) != clean) {
 			remaining.append(item.trimmed());
 		}
 	}
@@ -1235,15 +1291,21 @@ void Settings::toggleUserFullHidden(const PeerData *peer) {
 	const auto userRawId = QString::number(peer->id.value & PeerId::kChatTypeMask);
 	const auto uname = peer->rawUsername().trimmed().toLower();
 	if (isUserFullHidden(peer)) {
+		bool datesChanged = false;
+		datesChanged |= (_fullHiddenUsersAddedAt.remove(userRawId) > 0);
+		datesChanged |= (_fullHiddenUsersAddedAt.remove(bareId) > 0);
+		if (!uname.isEmpty()) {
+			datesChanged |= (_fullHiddenUsersAddedAt.remove(uname) > 0);
+		}
+		if (datesChanged) {
+			SaveHiddenDates(u"fullHiddenUsersDates"_q, _fullHiddenUsersAddedAt);
+		}
 		const auto list = _fullHiddenUsersRaw.split(
 			QRegularExpression(u"[\\s,;\\n]+"_q),
 			Qt::SkipEmptyParts);
 		QStringList remaining;
 		for (const auto &item : list) {
-			auto clean = item.trimmed().toLower();
-			if (clean.startsWith('@')) {
-				clean.remove(0, 1);
-			}
+			const auto clean = NormalizeHiddenIdentifierKey(item);
 			if (clean == userRawId || clean == bareId || (!uname.isEmpty() && clean == uname)) {
 				continue;
 			}

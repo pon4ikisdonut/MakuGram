@@ -10,9 +10,15 @@ a custom Telegram Desktop client fork.
 #include "boxes/connection_box.h"
 
 #include "makugram/makugram_settings.h"
+#include "apiwrap.h"
 #include "base/event_filter.h"
 #include "core/click_handler_types.h"
+#include "data/data_changes.h"
+#include "data/data_peer.h"
+#include "data/data_session.h"
+#include "data/data_user.h"
 #include "lang/lang_keys.h"
+#include "main/main_session.h"
 #include "settings/sections/settings_main.h"
 #include "settings/settings_builder.h"
 #include "settings/settings_common_session.h"
@@ -22,14 +28,21 @@ a custom Telegram Desktop client fork.
 #include "styles/style_layers.h"
 #include "ui/basic_click_handlers.h"
 #include "ui/boxes/confirm_box.h"
+#include "ui/empty_userpic.h"
 #include "ui/layers/generic_box.h"
+#include "ui/painter.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/fields/input_field.h"
 #include "ui/widgets/labels.h"
 #include "ui/wrap/vertical_layout.h"
 #include "window/window_session_controller.h"
+#include <QtCore/QDateTime>
+#include <QtCore/QHash>
 #include <QtCore/QPointer>
+#include <QtCore/QRegularExpression>
+#include <QtCore/QSet>
+#include <QtGui/QPainterPath>
 
 namespace Settings {
 namespace {
@@ -51,6 +64,18 @@ constexpr auto kBoxMaxHeight = 690;
 		auto st = st::defaultActiveButton;
 		st.height = 46;
 		st.textTop = 13;
+		st.style = st::semiboldTextStyle;
+		return st;
+	}();
+	return result;
+}
+
+[[nodiscard]] const style::RoundButton &AddPlusButtonStyle() {
+	static auto result = [] {
+		auto st = st::defaultActiveButton;
+		st.height = 36;
+		st.width = 36;
+		st.textTop = 7;
 		st.style = st::semiboldTextStyle;
 		return st;
 	}();
@@ -244,134 +269,471 @@ void ShowSpamFilterBox(not_null<Window::SessionController*> controller) {
 	}));
 }
 
-void ShowHiddenUsersBox(not_null<Window::SessionController*> controller) {
+struct HiddenUsersBoxConfig {
+	rpl::producer<QString> title;
+	rpl::producer<QString> description;
+	bool showEnableToggle = false;
+	rpl::producer<QString> enableToggleTitle;
+	Fn<bool()> getEnabled;
+	Fn<void(bool)> setEnabled;
+	Fn<std::vector<HiddenUserEntry>()> getEntries;
+	Fn<void(const QString &)> addEntry;
+	Fn<void(const QString &)> removeEntry;
+	Fn<rpl::producer<bool>()> changes;
+};
+
+[[nodiscard]] QString NormalizeUserInputIdentifier(const QString &raw) {
+	auto clean = raw.trimmed();
+	if (clean.startsWith(u"https://t.me/"_q, Qt::CaseInsensitive)) {
+		clean = clean.mid(13);
+	} else if (clean.startsWith(u"http://t.me/"_q, Qt::CaseInsensitive)) {
+		clean = clean.mid(12);
+	} else if (clean.startsWith(u"t.me/"_q, Qt::CaseInsensitive)) {
+		clean = clean.mid(5);
+	}
+	if (clean.startsWith('@')) {
+		clean = clean.mid(1);
+	}
+	const auto slash = clean.indexOf('/');
+	if (slash > 0) {
+		clean = clean.left(slash);
+	}
+	clean = clean.trimmed();
+	if (clean.isEmpty()) {
+		return QString();
+	}
+	bool ok = false;
+	if (const auto id = clean.toULongLong(&ok); ok && id > 0) {
+		return QString::number(id);
+	}
+	static const auto kUsernameRx = QRegularExpression(u"^[a-zA-Z0-9_]{3,64}$"_q);
+	if (kUsernameRx.match(clean).hasMatch()) {
+		return '@' + clean.toLower();
+	}
+	return QString();
+}
+
+[[nodiscard]] PeerData *ResolveLocalPeer(
+		not_null<Main::Session*> session,
+		const QString &identifier) {
+	auto clean = identifier.trimmed().toLower();
+	if (clean.startsWith('@')) {
+		clean.remove(0, 1);
+	}
+	bool ok = false;
+	if (const auto rawId = clean.toULongLong(&ok); ok && rawId > 0) {
+		if (const auto user = session->data().userLoaded(UserId(rawId))) {
+			return user;
+		}
+		return session->data().peerLoaded(PeerId(rawId));
+	}
+	return session->data().peerByUsername(clean);
+}
+
+void ShowHiddenUsersManagerBox(
+		not_null<Window::SessionController*> controller,
+		HiddenUsersBoxConfig config) {
+	const auto sharedConfig = std::make_shared<HiddenUsersBoxConfig>(std::move(config));
 	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setWidth(kBoxContentWidth);
 		box->setMaxHeight(kBoxMaxHeight);
-		box->setTitle(Tr::Value(
-			QString::fromUtf8("Скрытые пользователи"),
-			u"Hidden Users"_q));
+		box->setTitle(std::move(sharedConfig->title));
 
 		box->addRow(
 			object_ptr<Ui::FlatLabel>(
 				box,
-				Tr::Value(
-					QString::fromUtf8(
-						"Введите юзернеймы (@username) или числовые ID пользователей через запятую или с новой строки.\n"
-						"Сообщения от этих пользователей будут отображаться с именем «Скрытый пользователь», без аватарки, а их текст и медиа будут спрятаны под спойлер (без блокировки пользователя в Telegram):"),
-					u"Enter usernames (@username) or numeric user IDs separated by commas or new lines.\n"
-					"Messages from these users will be shown with the name 'Hidden User', without avatar, and their text and media will be hidden under a spoiler (without blocking them in Telegram):"_q),
-				st::boxLabel),
-			st::boxRowPadding);
-
-		const auto field = box->addRow(
-			object_ptr<Ui::InputField>(
-				box,
-				st::supportInfoField,
-				Ui::InputField::Mode::MultiLine,
-				Tr::Value(
-					QString::fromUtf8("@username или ID (например: @durov, 12345678)..."),
-					u"@username or ID (e.g.: @durov, 12345678)..."_q),
-				MakuGram::Settings::instance().hiddenUsersRaw()),
-			st::boxRowPadding);
-		field->setFocus();
-		field->setMinHeight(130);
-
-		const auto enableToggle = box->addRow(
-			object_ptr<Ui::Checkbox>(
-				box,
-				Tr::Value(
-					QString::fromUtf8("Включить скрытие сообщений указанных пользователей"),
-					u"Enable hiding messages from specified users"_q),
-				MakuGram::Settings::instance().hiddenUsersEnabled(),
-				st::defaultBoxCheckbox),
+				std::move(sharedConfig->description),
+				st::boxDividerLabel),
 			style::margins(
 				st::boxRowPadding.left(),
-				st::boxMediumSkip,
+				4,
 				st::boxRowPadding.right(),
-				2),
+				st::boxMediumSkip),
 			style::al_justify);
-		enableToggle->setCursor(style::cur_pointer);
-		enableToggle->setAllowTextLines(0);
-		enableToggle->setCheckAlignment(style::al_topleft);
 
-		box->addButton(tr::lng_settings_save(), [=] {
-			MakuGram::Settings::instance().setHiddenUsersEnabled(enableToggle->checked());
-			MakuGram::Settings::instance().setHiddenUsersRaw(field->getLastText());
-			box->closeBox();
-			controller->showToast(Tr::Get(
-				QString::fromUtf8("Настройки сохранены"),
-				u"Settings saved"_q));
-		});
-		box->addButton(tr::lng_cancel(), [=] {
+		if (sharedConfig->showEnableToggle) {
+			AddCheckboxRow(
+				box,
+				std::move(sharedConfig->enableToggleTitle),
+				sharedConfig->getEnabled(),
+				[=](bool checked) {
+					sharedConfig->setEnabled(checked);
+				});
+		}
+
+		const auto inputRow = box->addRow(
+			object_ptr<Ui::RpWidget>(box),
+			style::margins(
+				st::boxRowPadding.left(),
+				0,
+				st::boxRowPadding.right(),
+				st::boxMediumSkip));
+		const auto field = Ui::CreateChild<Ui::InputField>(
+			inputRow,
+			st::defaultInputField,
+			Tr::Value(
+				QString::fromUtf8("Введите @username или user_id..."),
+				u"Enter @username or user_id..."_q));
+		field->setFocus();
+
+		const auto addBtn = Ui::CreateChild<Ui::RoundButton>(
+			inputRow,
+			rpl::single(u"+"_q),
+			AddPlusButtonStyle());
+		addBtn->setFullRadius(true);
+
+		constexpr auto kAddBtnSize = 36;
+		const auto layoutInputRow = [=] {
+			const auto w = inputRow->width();
+			if (w <= 0) {
+				return;
+			}
+			const auto fieldWidth = std::max(80, w - kAddBtnSize - 10);
+			field->resizeToWidth(fieldWidth);
+			const auto rowHeight = std::max(field->height(), kAddBtnSize);
+			inputRow->resize(w, rowHeight);
+			field->moveToLeft(0, std::max(0, (rowHeight - field->height()) / 2));
+			addBtn->resize(kAddBtnSize, kAddBtnSize);
+			addBtn->moveToRight(0, std::max(0, (rowHeight - kAddBtnSize) / 2));
+		};
+		inputRow->widthValue() | rpl::on_next([=](int) {
+			layoutInputRow();
+		}, inputRow->lifetime());
+		field->heightValue() | rpl::on_next([=](int) {
+			layoutInputRow();
+		}, inputRow->lifetime());
+		layoutInputRow();
+
+		const auto cardsContainer = box->addRow(
+			object_ptr<Ui::VerticalLayout>(box),
+			QMargins());
+
+		const auto weakBox = QPointer<Ui::GenericBox>(box);
+		const auto weakCards = QPointer<Ui::VerticalLayout>(cardsContainer);
+		const auto resolveAttempted = std::make_shared<QSet<QString>>();
+		const auto rebuildPtr = std::make_shared<Fn<void()>>();
+
+		const auto session = &controller->session();
+		const auto requestResolveUsername = [=](const QString &usernameNoAt) {
+			const auto lower = usernameNoAt.toLower();
+			if (lower.isEmpty() || resolveAttempted->contains(lower)) {
+				return;
+			}
+			resolveAttempted->insert(lower);
+			session->api().request(MTPcontacts_ResolveUsername(
+				MTP_flags(0),
+				MTP_string(lower),
+				MTP_string(QString())
+			)).done([=](const MTPcontacts_ResolvedPeer &result) {
+				result.match([&](const MTPDcontacts_resolvedPeer &data) {
+					session->data().processUsers(data.vusers());
+					session->data().processChats(data.vchats());
+				});
+				if (weakBox && rebuildPtr && *rebuildPtr) {
+					(*rebuildPtr)();
+				}
+			}).send();
+		};
+
+		*rebuildPtr = [=] {
+			const auto container = weakCards.data();
+			if (!container) {
+				return;
+			}
+			container->clear();
+			const auto entries = sharedConfig->getEntries();
+			if (entries.empty()) {
+				container->add(
+					object_ptr<Ui::FlatLabel>(
+						container,
+						Tr::Value(
+							QString::fromUtf8("Список пуст. Добавьте пользователя по @username или user_id выше."),
+							u"The list is empty. Add a user by @username or user_id above."_q),
+						st::boxDividerLabel),
+					style::margins(
+						st::boxRowPadding.left(),
+						8,
+						st::boxRowPadding.right(),
+						12));
+				if (container->width() > 0) {
+					container->resizeToWidth(container->width());
+				}
+				return;
+			}
+
+			struct CardState {
+				Ui::PeerUserpicView userpic;
+			};
+
+			for (const auto &entry : entries) {
+				const auto idText = entry.identifier;
+				auto cleanKey = idText.trimmed().toLower();
+				if (cleanKey.startsWith('@')) {
+					cleanKey.remove(0, 1);
+				}
+				bool ok = false;
+				const auto numericId = cleanKey.toULongLong(&ok);
+				const auto isNumeric = (ok && numericId > 0);
+				if (!isNumeric && !ResolveLocalPeer(session, idText)) {
+					requestResolveUsername(cleanKey);
+				}
+
+				const auto card = container->add(
+					object_ptr<Ui::RpWidget>(container),
+					style::margins(
+						st::boxRowPadding.left(),
+						0,
+						st::boxRowPadding.right(),
+						8));
+				const auto state = card->lifetime().make_state<CardState>();
+				constexpr auto kCardHeight = 66;
+				card->resize(card->width(), kCardHeight);
+
+				const auto removeBtn = Ui::CreateChild<Ui::IconButton>(
+					card,
+					st::boxTitleClose);
+				removeBtn->setCursor(style::cur_pointer);
+				removeBtn->setClickedCallback([=] {
+					sharedConfig->removeEntry(idText);
+				});
+
+				card->sizeValue() | rpl::on_next([=](QSize s) {
+					removeBtn->moveToRight(
+						6,
+						std::max(0, (s.height() - removeBtn->height()) / 2));
+				}, card->lifetime());
+
+				card->paintRequest() | rpl::on_next([=] {
+					auto p = QPainter(card);
+					auto hq = PainterHighQualityEnabler(p);
+
+					QPainterPath path;
+					path.addRoundedRect(
+						QRectF(0, 0, card->width(), card->height()),
+						st::roundRadiusLarge,
+						st::roundRadiusLarge);
+					p.fillPath(path, st::boxDividerBg);
+
+					constexpr auto kAvatarSize = 42;
+					constexpr auto kAvatarLeft = 12;
+					const auto avatarTop = (card->height() - kAvatarSize) / 2;
+					const auto peer = ResolveLocalPeer(session, idText);
+
+					if (peer) {
+						peer->paintRawUserpic(p, state->userpic, {
+							.position = QPoint(kAvatarLeft, avatarTop),
+							.size = kAvatarSize,
+							.shape = Ui::PeerUserpicShape::Circle,
+						});
+					} else {
+						const auto fallbackLetter = cleanKey.isEmpty()
+							? u"?"_q
+							: cleanKey.left(1).toUpper();
+						Ui::EmptyUserpic(
+							Ui::EmptyUserpic::UserpicColor(qHash(cleanKey) % 8),
+							fallbackLetter).paintCircle(
+								p,
+								kAvatarLeft,
+								avatarTop,
+								kAvatarSize,
+								kAvatarSize);
+					}
+
+					const auto textLeft = kAvatarLeft + kAvatarSize + 12;
+					const auto textRight = card->width() - removeBtn->width() - 14;
+					const auto textWidth = std::max(40, textRight - textLeft);
+
+					QString titleLine;
+					QString subLine;
+					if (peer) {
+						titleLine = peer->rawName().trimmed();
+						if (titleLine.isEmpty()) {
+							titleLine = idText;
+						}
+						const auto uname = peer->rawUsername().trimmed();
+						const auto rawPeerId = peer->id.value & PeerId::kChatTypeMask;
+						if (!uname.isEmpty()) {
+							subLine = u"@%1 · ID: %2"_q.arg(uname).arg(rawPeerId);
+						} else {
+							subLine = u"ID: %1"_q.arg(rawPeerId);
+						}
+					} else {
+						titleLine = isNumeric
+							? Tr::Get(QString::fromUtf8("Пользователь %1").arg(cleanKey), u"User %1"_q.arg(cleanKey))
+							: idText;
+						subLine = isNumeric
+							? u"ID: %1"_q.arg(cleanKey)
+							: idText;
+					}
+
+					const auto dateValue = (entry.addedAt > 0)
+						? QDateTime::fromSecsSinceEpoch(entry.addedAt).toString(u"dd.MM.yyyy"_q)
+						: Tr::Get(QString::fromUtf8("ранее"), u"earlier"_q);
+					const auto dateLine = Tr::Get(
+						QString::fromUtf8("Добавлено: %1").arg(dateValue),
+						u"Added: %1"_q.arg(dateValue));
+
+					const auto &titleFont = st::semiboldTextStyle.font;
+					const auto &subFont = st::defaultTextStyle.font;
+					const auto &dateFont = st::boxDividerLabel.style.font;
+
+					p.setPen(st::windowBoldFg);
+					p.setFont(titleFont);
+					p.drawText(
+						textLeft,
+						10 + titleFont->ascent,
+						titleFont->elided(titleLine, textWidth));
+
+					p.setPen(st::windowSubTextFg);
+					p.setFont(subFont);
+					p.drawText(
+						textLeft,
+						29 + subFont->ascent,
+						subFont->elided(subLine, textWidth));
+
+					p.setFont(dateFont);
+					p.drawText(
+						textLeft,
+						47 + dateFont->ascent,
+						dateFont->elided(dateLine, textWidth));
+				}, card->lifetime());
+			}
+
+			if (container->width() > 0) {
+				container->resizeToWidth(container->width());
+			}
+		};
+
+		const auto tryAdd = [=] {
+			const auto normalized = NormalizeUserInputIdentifier(field->getLastText());
+			if (normalized.isEmpty()) {
+				field->showError();
+				return;
+			}
+			auto cleanTarget = normalized.toLower();
+			if (cleanTarget.startsWith('@')) {
+				cleanTarget.remove(0, 1);
+			}
+			for (const auto &existing : sharedConfig->getEntries()) {
+				auto cleanExisting = existing.identifier.toLower();
+				if (cleanExisting.startsWith('@')) {
+					cleanExisting.remove(0, 1);
+				}
+				if (cleanExisting == cleanTarget) {
+					controller->showToast(Tr::Get(
+						QString::fromUtf8("Пользователь уже есть в списке"),
+						u"User is already in the list"_q));
+					field->setText(QString());
+					return;
+				}
+			}
+			sharedConfig->addEntry(normalized);
+			field->setText(QString());
+			field->setFocus();
+			if (!normalized.startsWith('@')) {
+				return;
+			}
+			if (!ResolveLocalPeer(session, normalized)) {
+				requestResolveUsername(normalized.mid(1));
+			}
+		};
+
+		addBtn->setClickedCallback(tryAdd);
+		field->submits() | rpl::on_next(tryAdd, field->lifetime());
+
+		sharedConfig->changes() | rpl::on_next([=] {
+			if (*rebuildPtr) {
+				(*rebuildPtr)();
+			}
+		}, box->lifetime());
+
+		const auto updateCards = [=] {
+			if (const auto container = weakCards.data()) {
+				for (const auto child : container->children()) {
+					if (const auto w = qobject_cast<QWidget*>(child)) {
+						w->update();
+					}
+				}
+			}
+		};
+
+		session->downloaderTaskFinished() | rpl::on_next([=] {
+			updateCards();
+		}, box->lifetime());
+
+		session->changes().peerUpdates(
+			Data::PeerUpdate::Flag::Name
+				| Data::PeerUpdate::Flag::Photo
+				| Data::PeerUpdate::Flag::Username
+		) | rpl::on_next([=] {
+			updateCards();
+		}, box->lifetime());
+
+		(*rebuildPtr)();
+
+		box->addButton(tr::lng_close(), [=] {
 			box->closeBox();
 		});
 	}));
 }
 
+void ShowHiddenUsersBox(not_null<Window::SessionController*> controller) {
+	ShowHiddenUsersManagerBox(controller, {
+		.title = Tr::Value(
+			QString::fromUtf8("Скрытые пользователи"),
+			u"Hidden Users"_q),
+		.description = Tr::Value(
+			QString::fromUtf8(
+				"Сообщения от этих пользователей будут отображаться с именем «Скрытый пользователь», с аватаркой удалённого аккаунта, а текст и медиа будут спрятаны под спойлер (без блокировки в Telegram)."),
+			u"Messages from these users will appear as 'Hidden User' with a deleted account avatar, and their text and media will be hidden under a spoiler (without blocking them in Telegram)."_q),
+		.showEnableToggle = true,
+		.enableToggleTitle = Tr::Value(
+			QString::fromUtf8("Включить скрытие сообщений указанных пользователей"),
+			u"Enable hiding messages from specified users"_q),
+		.getEnabled = [] {
+			return MakuGram::Settings::instance().hiddenUsersEnabled();
+		},
+		.setEnabled = [](bool checked) {
+			MakuGram::Settings::instance().setHiddenUsersEnabled(checked);
+		},
+		.getEntries = [] {
+			return MakuGram::Settings::instance().hiddenUsersEntries();
+		},
+		.addEntry = [](const QString &id) {
+			MakuGram::Settings::instance().addHiddenUser(id);
+		},
+		.removeEntry = [](const QString &id) {
+			MakuGram::Settings::instance().removeHiddenUser(id);
+		},
+		.changes = [] {
+			return MakuGram::Settings::instance().hiddenUsersChanges();
+		},
+	});
+}
+
 void ShowFullHiddenUsersBox(not_null<Window::SessionController*> controller) {
-	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
-		box->setWidth(kBoxContentWidth);
-		box->setMaxHeight(kBoxMaxHeight);
-		box->setTitle(Tr::Value(
+	ShowHiddenUsersManagerBox(controller, {
+		.title = Tr::Value(
 			QString::fromUtf8("Полностью скрытые пользователи"),
-			u"Full-Hidden Users"_q));
-
-		box->addRow(
-			object_ptr<Ui::FlatLabel>(
-				box,
-				Tr::Value(
-					QString::fromUtf8(
-						"Введите юзернеймы (@username) или числовые ID пользователей через запятую или с новой строки.\n"
-						"Эти пользователи полностью исчезнут из списка чатов, поиска и списка участников, а их сообщения, статусы набора текста и уведомления вообще не будут отображаться (без блокировки в Telegram):"),
-					u"Enter usernames (@username) or numeric user IDs separated by commas or new lines.\n"
-					"These users will completely disappear from the chat list, search, and member lists, and their messages, typing indicators, and notifications will not be displayed at all (without blocking them in Telegram):"_q),
-				st::boxLabel),
-			st::boxRowPadding);
-
-		const auto field = box->addRow(
-			object_ptr<Ui::InputField>(
-				box,
-				st::supportInfoField,
-				Ui::InputField::Mode::MultiLine,
-				Tr::Value(
-					QString::fromUtf8("@username или ID (например: @durov, 12345678)..."),
-					u"@username or ID (e.g.: @durov, 12345678)..."_q),
-				MakuGram::Settings::instance().fullHiddenUsersRaw()),
-			st::boxRowPadding);
-		field->setFocus();
-		field->setMinHeight(130);
-
-		const auto enableToggle = box->addRow(
-			object_ptr<Ui::Checkbox>(
-				box,
-				Tr::Value(
-					QString::fromUtf8("Включить полное скрытие указанных пользователей"),
-					u"Enable full hiding for specified users"_q),
-				MakuGram::Settings::instance().fullHiddenUsersEnabled(),
-				st::defaultBoxCheckbox),
-			style::margins(
-				st::boxRowPadding.left(),
-				st::boxMediumSkip,
-				st::boxRowPadding.right(),
-				2),
-			style::al_justify);
-		enableToggle->setCursor(style::cur_pointer);
-		enableToggle->setAllowTextLines(0);
-		enableToggle->setCheckAlignment(style::al_topleft);
-
-		box->addButton(tr::lng_settings_save(), [=] {
-			MakuGram::Settings::instance().setFullHiddenUsersEnabled(enableToggle->checked());
-			MakuGram::Settings::instance().setFullHiddenUsersRaw(field->getLastText());
-			box->closeBox();
-			controller->showToast(Tr::Get(
-				QString::fromUtf8("Настройки сохранены"),
-				u"Settings saved"_q));
-		});
-		box->addButton(tr::lng_cancel(), [=] {
-			box->closeBox();
-		});
-	}));
+			u"Full-Hidden Users"_q),
+		.description = Tr::Value(
+			QString::fromUtf8(
+				"Эти пользователи полностью исчезнут из списка чатов, поиска и списка участников, а их сообщения, статусы набора текста и уведомления вообще не будут отображаться (без блокировки в Telegram)."),
+			u"These users will completely disappear from the chat list, search, and member lists, and their messages, typing indicators, and notifications will not be displayed at all (without blocking them in Telegram)."_q),
+		.showEnableToggle = false,
+		.getEntries = [] {
+			return MakuGram::Settings::instance().fullHiddenUsersEntries();
+		},
+		.addEntry = [](const QString &id) {
+			MakuGram::Settings::instance().addFullHiddenUser(id);
+		},
+		.removeEntry = [](const QString &id) {
+			MakuGram::Settings::instance().removeFullHiddenUser(id);
+		},
+		.changes = [] {
+			return MakuGram::Settings::instance().fullHiddenUsersChanges();
+		},
+	});
 }
 
 void ShowMessagesBox(not_null<Window::SessionController*> controller) {
@@ -1148,19 +1510,6 @@ void ShowProxySettingsBox(not_null<Window::SessionController*> controller) {
 			Tr::Value(
 				QString::fromUtf8("Туннелирование MTProto трафика через защищенные WebSocket WSS соединения (Cloudflare) для полного обхода замедлений, фильтрации DPI и блокировок Telegram без использования сторонних VPN."),
 				u"Tunnel MTProto traffic over secure WebSocket WSS connections (Cloudflare) to bypass throttling, DPI filtering, and Telegram blocks without external VPN."_q));
-
-		AddCheckboxRow(
-			box,
-			Tr::Value(
-				QString::fromUtf8("Получать предварительные и бета-версии"),
-				u"Receive pre-release and beta updates"_q),
-			MakuGram::Settings::instance().betaUpdates(),
-			[=](bool checked) {
-				MakuGram::Settings::instance().setBetaUpdates(checked);
-			},
-			Tr::Value(
-				QString::fromUtf8("Проверять и автоматически предлагать установку свежих предварительных релизов MakuGramR с GitHub."),
-				u"Check and suggest installing pre-release MakuGramR builds directly from GitHub."_q));
 
 		box->addSkip(st::boxMediumSkip);
 
