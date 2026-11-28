@@ -1,0 +1,242 @@
+name: Preview Build MakuGram (Artifacts Only)
+
+on:
+  push:
+    branches:
+      - temp/pr-preview-build
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: makugram-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    if: github.repository == 'pon4ikisdonut/MakuGramR' || github.repository == 'pon4ikisdonut/MakuGram'
+    name: Windows (x64)
+    runs-on: windows-latest
+
+    env:
+      PREPARE_PATH: Telegram/build/prepare/prepare.py
+      PreferredToolArchitecture: x64
+
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: "Free disk space on C drive"
+        shell: pwsh
+        run: |
+          $before = (Get-PSDrive C).Free / 1GB
+          Get-Service docker -ErrorAction SilentlyContinue | Stop-Service -ErrorAction SilentlyContinue
+          wsl --shutdown 2> $null
+          Remove-Item "C:\Android\android-sdk", "$env:LOCALAPPDATA\Android\Sdk", "C:\Program Files\dotnet", "C:\Miniconda", "C:\msys64", "$env:USERPROFILE\.cargo", "$env:USERPROFILE\.rustup", "$env:LOCALAPPDATA\Docker", "C:\ProgramData\DockerDesktop", "C:\Program Files\PostgreSQL", "C:\PostgreSQL", "C:\Program Files\MongoDB", "C:\Program Files\MySQL" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\ghcup", "C:\cabal", "C:\Program Files\LLVM", "C:\vcpkg", "C:\tools\kotlinc", "C:\tools\php", "C:\tools\Apache24", "C:\tools\nginx-*", "C:\selenium", "C:\SeleniumWebDrivers", "C:\Program Files\R", "C:\Program Files (x86)\R", "C:\rtools*", "C:\ProgramData\Package Cache" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item C:\hostedtoolcache\windows\Go*, C:\hostedtoolcache\windows\Ruby*, C:\hostedtoolcache\windows\PyPy*, C:\hostedtoolcache\windows\Java_*, C:\hostedtoolcache\windows\NuGet* -Recurse -Force -ErrorAction SilentlyContinue
+          Write-Host ('{0:N1} GB -> {1:N1} GB free' -f $before, ((Get-PSDrive C).Free / 1GB))
+          Get-PSDrive C, D
+
+      - name: Configure Pagefile
+        uses: al-cheb/configure-pagefile-action@v1.5
+        with:
+          minimum-size: 16GB
+          maximum-size: 32GB
+          disk-root: "D:"
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Prepare directories
+        run: |
+          if not exist "%GITHUB_WORKSPACE%\TBuild\Libraries" mkdir "%GITHUB_WORKSPACE%\TBuild\Libraries"
+          if not exist "%GITHUB_WORKSPACE%\TBuild\ThirdParty" mkdir "%GITHUB_WORKSPACE%\TBuild\ThirdParty"
+          if exist "%userprofile%\TBuild" rmdir /s /q "%userprofile%\TBuild"
+          mklink /j "%userprofile%\TBuild" "%GITHUB_WORKSPACE%\TBuild"
+          echo TBUILD=%GITHUB_WORKSPACE%\TBuild>>%GITHUB_ENV%
+          echo LibrariesPath=%GITHUB_WORKSPACE%\TBuild\Libraries\win64>>%GITHUB_ENV%
+          python --version
+
+      - name: Get repository name
+        shell: bash
+        run: echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> $GITHUB_ENV
+
+      - name: Clone
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          path: ${{ env.TBUILD }}\${{ env.REPO_NAME }}
+
+      - name: First set up
+        shell: bash
+        run: |
+          DOCPATH=$TBUILD/$REPO_NAME/docs/building-win.md
+          SDK="$(grep "SDK version" $DOCPATH | sed -r 's/.*\*\*(.*)\*\* SDK version.*/\1/')"
+          echo "SDK=$SDK" >> $GITHUB_ENV
+          echo "$(sha256sum $TBUILD/$REPO_NAME/$PREPARE_PATH | awk '{ print $1 }')" >> CACHE_KEY.txt
+          echo "$(sha256sum $TBUILD/$REPO_NAME/Telegram/build/qt_version.py | awk '{ print $1 }')" >> CACHE_KEY.txt
+          echo "$SDK" >> CACHE_KEY.txt
+          echo "CACHE_KEY=$(sha256sum CACHE_KEY.txt | awk '{ print $1 }')" >> $GITHUB_ENV
+          git config --global user.email "ci@example.com"
+          git config --global user.name "CI"
+
+      - name: Visual Studio ATL component
+        shell: pwsh
+        run: |
+          $installer = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer'
+          $vswhere = Join-Path $installer 'vswhere.exe'
+          $setup = Join-Path $installer 'setup.exe'
+          if (-not (Test-Path $vswhere) -or -not (Test-Path $setup)) {
+            throw "Visual Studio Installer is incomplete at $installer."
+          }
+
+          $toolsComponent = 'Microsoft.VisualStudio.Component.VC.14.44.17.14.x86.x64'
+          $atlComponent = 'Microsoft.VisualStudio.Component.VC.14.44.17.14.ATL'
+          $path = @(& $vswhere -latest -products '*' -requires $toolsComponent -property installationPath)[0]
+          if (-not $path) {
+            throw "No Visual Studio instance provides $toolsComponent."
+          }
+
+          $toolset = Get-ChildItem (Join-Path $path 'VC\Tools\MSVC') -Directory `
+            | Where-Object { $_.Name -like '14.44.*' } `
+            | Sort-Object Name -Descending `
+            | Select-Object -First 1
+          if (-not $toolset) {
+            throw "The selected Visual Studio instance has no 14.44 toolset."
+          }
+          $header = Join-Path $toolset.FullName 'atlmfc\include\atlbase.h'
+          if (Test-Path $header) {
+            Write-Host "ATL is already installed for $($toolset.Name)."
+            exit 0
+          }
+
+          $process = Start-Process -FilePath $setup -Wait -PassThru -ArgumentList @(
+            'modify',
+            '--installPath', "`"$path`"",
+            '--add', $atlComponent,
+            '--quiet', '--norestart', '--nocache'
+          )
+          if ($process.ExitCode -notin @(0, 3010)) {
+            throw "Visual Studio Installer exited with $($process.ExitCode)."
+          }
+          if (-not (Test-Path $header)) {
+            throw "$atlComponent completed without installing $header."
+          }
+
+      - uses: Eden-CI/msvc-dev-cmd@master
+        name: Native Tools Command Prompt
+        with:
+          arch: x64
+          sdk: ${{ env.SDK }}
+          toolset: '14.44'
+
+      - name: NuGet sources
+        run: |
+          nuget sources Disable -Name "Microsoft Visual Studio Offline Packages"
+          nuget sources Add -Source https://api.nuget.org/v3/index.json & exit 0
+
+      - name: Restore ThirdParty cache
+        id: cache-third-party
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.TBUILD }}\ThirdParty
+          key: ${{ runner.OS }}-${{ runner.arch }}-third-party-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-${{ runner.arch }}-third-party-
+
+      - name: Restore Libraries cache
+        id: cache-libs
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ${{ env.LibrariesPath }}\*
+            !${{ env.LibrariesPath }}\cache_keys
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\*
+            !${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: ${{ runner.OS }}-x64-libs-rel-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-x64-libs-rel-
+
+      - name: Restore Qt cache
+        id: cache-qt
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: ${{ runner.OS }}-x64-qtrel-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-x64-qtrel-
+
+      - name: Prepare libraries
+        run: |
+          %TBUILD%\%REPO_NAME%\Telegram\build\prepare\win.bat silent
+
+      - name: Prune intermediate files
+        shell: bash
+        run: find $LibrariesPath '(' '(' ! '(' -name '*.lib' -o -name '*.a' -o -name '*.exe' -o -name '*.h' -o -name '*.hpp' -o -name '*.inc' -o -name '*.cmake' -o -name '*.pc' -o -path '*/include/*' -o -path '*/objects-*' -o -path '*/cache_keys/*' -o -path '*/patches/*' -o -path '*/nv-codec-headers/*' -o -path '*/src/wallet_engine/*' -o '(' '(' -path '*/tlottie/*' -o -path '*/wallet-engine/*' ')' ! -path '*/target/*' ')' ')' -type f ')' -o '(' -empty ! -path '*/tlottie/*' ! -path '*/wallet-engine/*' ')' ')' -delete
+
+      - name: Save ThirdParty cache
+        if: steps.cache-third-party.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.TBUILD }}\ThirdParty
+          key: ${{ steps.cache-third-party.outputs.cache-primary-key }}
+
+      - name: Save Libraries cache
+        if: steps.cache-libs.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ${{ env.LibrariesPath }}\*
+            !${{ env.LibrariesPath }}\cache_keys
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\*
+            !${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: ${{ steps.cache-libs.outputs.cache-primary-key }}
+
+      - name: Save Qt cache
+        if: steps.cache-qt.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: ${{ steps.cache-qt.outputs.cache-primary-key }}
+
+      - name: Build
+        run: |
+          cd %TBUILD%\%REPO_NAME%\Telegram
+          call configure.bat ^
+            x64 ^
+            -D TDESKTOP_API_ID=${{ vars.TDESKTOP_API_ID || '611335' }} ^
+            -D TDESKTOP_API_HASH=${{ secrets.TDESKTOP_API_HASH || 'd524b414d21f4d37f08684c1df41ac9c' }} ^
+            -D CMAKE_CONFIGURATION_TYPES=Release ^
+            -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= ^
+            -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
+            -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+          cmake --build ..\out --config Release --parallel 2 -- /p:PreferredToolArchitecture=x64
+
+      - name: Package artifact
+        shell: pwsh
+        run: |
+          $out = "$env:TBUILD\$env:REPO_NAME\out\Release"
+          $stage = Join-Path $env:RUNNER_TEMP "makugram-win-x64"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item (Join-Path $out "Telegram.exe") $stage
+          $modules = Join-Path $out "modules"
+          if (Test-Path $modules) {
+            Copy-Item $modules (Join-Path $stage "modules") -Recurse
+          }
+          New-Item -ItemType Directory -Force -Path "artifact" | Out-Null
+          Compress-Archive -Path "$stage\*" -DestinationPath "artifact\MakuGram-Preview-win-x64.zip" -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: MakuGram-Preview-win-x64
+          path: artifact/MakuGram-Preview-win-x64.zip
+          retention-days: 7
